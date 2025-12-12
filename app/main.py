@@ -115,7 +115,7 @@ async def api_root():
 # INCLUIR ROUTERS
 # =====================================================
 
-from app.routers import auth
+from app.routers import auth, boards, tasks
 
 # Auth Router
 app.include_router(
@@ -124,11 +124,22 @@ app.include_router(
     tags=["🔐 Autenticación"]
 )
 
+# Boards Router
+app.include_router(
+    boards.router,
+    prefix=f"{settings.API_V1_PREFIX}/boards",
+    tags=["📋 Tableros"]
+)
+
+# Tasks Router
+app.include_router(
+    tasks.router,
+    prefix=f"{settings.API_V1_PREFIX}/tasks",
+    tags=["✅ Tareas"]
+)
+
 # Próximos routers (descomentar cuando se creen):
-# from app.routers import users, boards, tasks, labels
-# app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["👤 Usuarios"])
-# app.include_router(boards.router, prefix=f"{settings.API_V1_PREFIX}/boards", tags=["📋 Tableros"])
-# app.include_router(tasks.router, prefix=f"{settings.API_V1_PREFIX}/tasks", tags=["✅ Tareas"])
+# from app.routers import labels
 # app.include_router(labels.router, prefix=f"{settings.API_V1_PREFIX}/labels", tags=["🏷️ Etiquetas"])
 
 

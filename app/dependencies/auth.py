@@ -47,7 +47,8 @@ class AuthDependency:
                 detail="Token ha expirado",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except jwt.InvalidTokenError:
+        except jwt.InvalidTokenError as e:
+            print(f"❌ Error al decodificar token: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token inválido",
@@ -73,27 +74,25 @@ class AuthDependency:
         token = credentials.credentials
         
         try:
-            # Primero intentar verificar con Supabase
-            supabase = get_supabase()
-            user = supabase.auth.get_user(token)
-            
-            if user and user.user:
-                return user.user.id
-            
-            # Si Supabase no funciona, usar verificación local
+            # Verificar token usando JWT
             payload = AuthDependency.verify_token(token)
             user_id = payload.get("sub")
             
             if not user_id:
+                print("❌ No se encontró 'sub' en el payload del token")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="No se pudo obtener el ID del usuario",
+                    detail="No se pudo obtener el ID del usuario del token",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             
+            print(f"✅ Usuario autenticado: {user_id}")
             return user_id
             
+        except HTTPException:
+            raise
         except Exception as e:
+            print(f"❌ Error en autenticación: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token inválido o expirado",
@@ -133,6 +132,7 @@ class AuthDependency:
         except Exception as e:
             if isinstance(e, HTTPException):
                 raise e
+            print(f"❌ Error al obtener usuario: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error al obtener usuario: {str(e)}"
