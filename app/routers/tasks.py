@@ -1,9 +1,3 @@
-"""
-CronoPlan API - Tasks Router
-Endpoints para gestión de tareas
-ARCHIVO COMPLETO - Reemplaza completamente el anterior
-"""
-
 from fastapi import APIRouter, Depends, HTTPException, status as http_status, Query
 from supabase import Client
 from app.database import get_supabase
@@ -37,7 +31,7 @@ async def enrich_task_data(task: dict, supabase: Client) -> dict:
                 board = supabase.table("boards").select("name").eq("id", task["board_id"]).single().execute()
                 task["board"] = board.data["name"] if board.data else None
             except Exception as e:
-                print(f"⚠️ Error al obtener board {task.get('board_id')}: {str(e)}")
+                #print(f"Error al obtener board {task.get('board_id')}: {str(e)}")
                 task["board"] = None
         else:
             task["board"] = None
@@ -55,14 +49,14 @@ async def enrich_task_data(task: dict, supabase: Client) -> dict:
                 else:
                     task["assignee"] = None
             except Exception as e:
-                print(f"⚠️ Error al obtener assignee {task.get('assignee_id')}: {str(e)}")
+                #print(f"Error al obtener assignee {task.get('assignee_id')}: {str(e)}")
                 task["assignee"] = None
         else:
             task["assignee"] = None
         
         return task
     except Exception as e:
-        print(f"❌ Error al enriquecer tarea: {str(e)}")
+        #print(f"Error al enriquecer tarea: {str(e)}")
         return task
 
 
@@ -108,10 +102,10 @@ async def get_tasks(
         query = query.order("created_at", desc=True).range(offset, offset + page_size - 1)
         
         # Ejecutar query
-        print(f"🔍 Obteniendo tareas del usuario {user_id}...")
+        #print(f"Obteniendo tareas del usuario {user_id}...")
         response = query.execute()
         
-        print(f"✅ Tareas obtenidas: {len(response.data)}")
+        #print(f"Tareas obtenidas: {len(response.data)}")
         
         # Enriquecer datos de cada tarea
         enriched_tasks = []
@@ -120,7 +114,7 @@ async def get_tasks(
                 enriched_task = await enrich_task_data(task, supabase)
                 enriched_tasks.append(enriched_task)
             except Exception as e:
-                print(f"⚠️ Error al enriquecer tarea {task.get('id')}: {str(e)}")
+                #print(f"Error al enriquecer tarea {task.get('id')}: {str(e)}")
                 # Agregar la tarea sin enriquecer
                 enriched_tasks.append(task)
         
@@ -132,7 +126,7 @@ async def get_tasks(
         )
         
     except Exception as e:
-        print(f"❌ Error completo al obtener tareas: {str(e)}")
+        #print(f"Error completo al obtener tareas: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
@@ -141,23 +135,23 @@ async def get_tasks(
         )
 
 
-@router.post(
-    "/",
-    response_model=TaskResponse,
-    status_code=http_status.HTTP_201_CREATED,
-    summary="Crear una nueva tarea",
-    description="Crea una nueva tarea para el usuario autenticado"
-)
+
+@router.post("/", response_model=TaskResponse, status_code=http_status.HTTP_201_CREATED)
 async def create_task(
     task_data: TaskCreate,
     user_id: str = Depends(get_current_user_id),
     supabase: Client = Depends(get_supabase)
 ):
-    """Crea una nueva tarea."""
+    """Crea una nueva tarea con recordatorio opcional."""
     try:
-        # Verificar que el board existe si se proporciona
+        # Verificar board si existe
         if task_data.board_id:
-            board_check = supabase.table("boards").select("id").eq("id", task_data.board_id).eq("user_id", user_id).execute()
+            board_check = supabase.table("boards")\
+                .select("id")\
+                .eq("id", task_data.board_id)\
+                .eq("user_id", user_id)\
+                .execute()
+            
             if not board_check.data:
                 raise HTTPException(
                     status_code=http_status.HTTP_404_NOT_FOUND,
@@ -176,6 +170,7 @@ async def create_task(
             "status_badge_color": task_data.status_badge_color,
             "assignee_id": task_data.assignee_id,
             "due_date": task_data.due_date,
+            "due_time": task_data.due_time, 
             "completed": False
         }
         
@@ -187,21 +182,44 @@ async def create_task(
                 detail="No se pudo crear la tarea"
             )
         
-        # Enriquecer datos
-        task = await enrich_task_data(response.data[0], supabase)
+        task = response.data[0]
         
-        print(f"✅ Tarea creada: {task['title']}")
-        return task
+        if task_data.create_reminder and task_data.due_date:
+            try:
+                auto_reminder = {
+                    "user_id": user_id,
+                    "task_id": task["id"],
+                    "reminder_type": "before_due",
+                    "days_before": task_data.reminder_days_before,
+                    "reminder_time": task_data.reminder_time,
+                    "is_active": True
+                }
+                
+                reminder_result = supabase.table("reminders")\
+                    .insert(auto_reminder)\
+                    .execute()
+                
+                if reminder_result.data:
+                    print(f"Recordatorio automático creado: {reminder_result.data[0]['id']}")
+                
+            except Exception as e:
+                # No fallar la creación de tarea si falla el recordatorio
+                print(f"Error al crear recordatorio automático: {e}")
+        
+        # Enriquecer datos
+        enriched_task = await enrich_task_data(task, supabase)
+        
+        #print(f"Tarea creada: {task['title']}")
+        return enriched_task
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error al crear tarea: {str(e)}")
+        print(f"Error: {str(e)}")
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al crear tarea: {str(e)}"
+            detail=str(e)
         )
-
 
 @router.get(
     "/{task_id}",
@@ -232,7 +250,7 @@ async def get_task(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error al obtener tarea: {str(e)}")
+        #print(f"Error al obtener tarea: {str(e)}")
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener tarea: {str(e)}"
@@ -283,7 +301,7 @@ async def update_task(
         if task_data.assignee_id is not None:
             update_data["assignee_id"] = task_data.assignee_id
         if task_data.due_date is not None:
-            update_data["due_date"] = task_data.due_date  # Ya es string
+            update_data["due_date"] = task_data.due_date 
         if task_data.completed is not None:
             update_data["completed"] = task_data.completed
         
@@ -296,13 +314,13 @@ async def update_task(
         response = supabase.table("tasks").update(update_data).eq("id", task_id).execute()
         task = await enrich_task_data(response.data[0], supabase)
         
-        print(f"✅ Tarea actualizada: {task_id}")
+        #print(f"Tarea actualizada: {task_id}")
         return task
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        #print(f"Error: {str(e)}")
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -338,7 +356,7 @@ async def update_task_status(
         response = supabase.table("tasks").update(update_data).eq("id", task_id).execute()
         task = await enrich_task_data(response.data[0], supabase)
         
-        print(f"✅ Status actualizado: {task_id} -> {status_data.status}")
+        #print(f"Status actualizado: {task_id} -> {status_data.status}")
         return task
         
     except HTTPException:
@@ -371,7 +389,7 @@ async def delete_task(
             )
         
         supabase.table("tasks").delete().eq("id", task_id).execute()
-        print(f"✅ Tarea eliminada: {task_id}")
+        #print(f"Tarea eliminada: {task_id}")
         return None
         
     except HTTPException:

@@ -1,8 +1,3 @@
-"""
-CronoPlan API - Auth Dependencies
-Dependencias para validar tokens y obtener usuario actual
-"""
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import Client
@@ -17,7 +12,7 @@ security = HTTPBearer()
 
 
 class AuthDependency:
-    """Clase para manejar la autenticación"""
+
     
     @staticmethod
     def verify_token(token: str) -> Dict:
@@ -44,14 +39,15 @@ class AuthDependency:
         except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token ha expirado",
+                detail="Tu sesión ha expirado. Por favor, inicia sesión nuevamente.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         except jwt.InvalidTokenError as e:
-            print(f"❌ Error al decodificar token: {str(e)}")
+            #print(f"Error al decodificar token: {str(e)}")
+ 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token inválido",
+                detail="Token de autenticación inválido. Por favor, inicia sesión.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
     
@@ -79,23 +75,25 @@ class AuthDependency:
             user_id = payload.get("sub")
             
             if not user_id:
-                print("❌ No se encontró 'sub' en el payload del token")
+                #print("No se encontró 'sub' en el payload del token")
+                
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="No se pudo obtener el ID del usuario del token",
+                    detail="No se pudo identificar al usuario. Por favor, inicia sesión.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             
-            print(f"✅ Usuario autenticado: {user_id}")
+            #print(f" Usuario autenticado: {user_id}")
             return user_id
             
         except HTTPException:
             raise
         except Exception as e:
-            print(f"❌ Error en autenticación: {str(e)}")
+            #print(f"Error en autenticación: {str(e)}")
+            
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token inválido o expirado",
+                detail="No se pudo validar las credenciales. Por favor, inicia sesión.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
     
@@ -122,9 +120,10 @@ class AuthDependency:
             response = supabase.table("users").select("*").eq("id", user_id).single().execute()
             
             if not response.data:
+                # ⭐ MENSAJE MEJORADO para usuario no encontrado
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Usuario no encontrado"
+                    detail="Usuario no encontrado. Es posible que tu cuenta haya sido eliminada."
                 )
             
             return response.data
@@ -135,7 +134,7 @@ class AuthDependency:
             print(f"❌ Error al obtener usuario: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error al obtener usuario: {str(e)}"
+                detail=f"Error al obtener información del usuario"
             )
 
 

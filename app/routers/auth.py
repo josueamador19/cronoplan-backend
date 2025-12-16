@@ -1,8 +1,3 @@
-"""
-CronoPlan API - Auth Router
-Endpoints para registro, login y gestión de autenticación
-"""
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 from app.database import get_supabase
@@ -28,7 +23,6 @@ router = APIRouter()
 # =====================================================
 # HELPER FUNCTIONS
 # =====================================================
-
 def create_access_token(user_id: str, email: str) -> tuple[str, int]:
     """
     Crea un JWT token de acceso.
@@ -37,7 +31,7 @@ def create_access_token(user_id: str, email: str) -> tuple[str, int]:
         tuple: (token, expires_in_seconds)
     """
     expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # convertir a segundos
+    expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  
     
     to_encode = {
         "sub": user_id,
@@ -72,11 +66,11 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
         if response.data:
             return response.data[0]
         else:
-            # Si falla, retornar datos básicos
+            
             return {**user_data, "email": email, "created_at": datetime.utcnow().isoformat()}
     except Exception as e:
         print(f"Error creando perfil de usuario: {e}")
-        # Si falla, retornar datos básicos
+        
         return {
             "id": user_id,
             "email": email,
@@ -107,16 +101,8 @@ async def register(
     data: RegisterRequest,
     supabase: Client = Depends(get_supabase)
 ):
-    """
-    Registra un nuevo usuario.
-    
-    - **email**: Email del usuario (debe ser único)
-    - **password**: Contraseña (mínimo 6 caracteres)
-    - **full_name**: Nombre completo del usuario (opcional)
-    - **phone**: Número de teléfono del usuario (opcional)
-    """
     try:
-        print(f"📧 Intentando registrar usuario: {data.email}")
+        print(f"Intentando registrar usuario: {data.email}")
         
         # Registrar usuario en Supabase Auth
         auth_response = supabase.auth.sign_up({
@@ -130,7 +116,7 @@ async def register(
             }
         })
         
-        print(f"✅ Respuesta de Supabase: {auth_response}")
+        # print(f"Respuesta de Supabase: {auth_response}")
         
         if not auth_response.user:
             raise HTTPException(
@@ -141,7 +127,7 @@ async def register(
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        print(f"👤 Usuario creado con ID: {user_id}")
+        #print(f"Usuario creado con ID: {user_id}")
         
         # Crear perfil en la tabla users
         user_profile = await create_user_profile(
@@ -179,7 +165,7 @@ async def register(
         raise
     except Exception as e:
         error_message = str(e)
-        print(f"❌ Error completo: {error_message}")
+        #print(f"Error completo: {error_message}")
         
         # Detectar diferentes tipos de errores
         if "already registered" in error_message.lower() or "already been registered" in error_message.lower():
@@ -221,14 +207,9 @@ async def login(
     data: LoginRequest,
     supabase: Client = Depends(get_supabase)
 ):
-    """
-    Inicia sesión con email y contraseña.
-    
-    - **email**: Email del usuario
-    - **password**: Contraseña
-    """
+  
     try:
-        print(f"🔐 Intento de login: {data.email}")
+        #print(f"Intento de login: {data.email}")
         
         # Autenticar con Supabase
         auth_response = supabase.auth.sign_in_with_password({
@@ -245,7 +226,7 @@ async def login(
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        print(f"✅ Login exitoso para: {user_email}")
+       # print(f"Login exitoso para: {user_email}")
         
         # Obtener perfil del usuario
         try:
@@ -253,7 +234,7 @@ async def login(
             user_profile = profile_response.data if profile_response.data else {}
         except:
             # Si no existe perfil, crearlo
-            print(f"⚠️ Perfil no encontrado, creando uno nuevo...")
+            #print(f"Perfil no encontrado, creando uno nuevo...")
             user_profile = await create_user_profile(supabase, user_id, user_email)
         
         # Generar token de acceso
@@ -283,7 +264,7 @@ async def login(
         raise
     except Exception as e:
         error_message = str(e)
-        print(f"❌ Error en login: {error_message}")
+        #print(f"Error en login: {error_message}")
         
         # Detectar errores de credenciales
         if "invalid" in error_message.lower() or "credentials" in error_message.lower() or "password" in error_message.lower():
@@ -312,11 +293,7 @@ async def logout(
     user_id: str = Depends(get_current_user_id),
     supabase: Client = Depends(get_supabase)
 ):
-    """
-    Cierra la sesión del usuario actual.
-    
-    **Requiere autenticación** (enviar token en header: `Authorization: Bearer <token>`)
-    """
+
     try:
         # Cerrar sesión en Supabase
         supabase.auth.sign_out()
@@ -345,11 +322,7 @@ async def logout(
 async def get_me(
     current_user: Dict = Depends(get_current_user)
 ):
-    """
-    Obtiene la información del usuario autenticado.
-    
-    **Requiere autenticación** (enviar token en header: `Authorization: Bearer <token>`)
-    """
+
     return UserResponse(
         id=current_user.get("id"),
         email=current_user.get("email"),
@@ -373,11 +346,7 @@ async def get_me(
 async def verify_token(
     user_id: str = Depends(get_current_user_id)
 ):
-    """
-    Verifica si el token de autenticación es válido.
-    
-    **Requiere autenticación** (enviar token en header: `Authorization: Bearer <token>`)
-    """
+
     return MessageResponse(
         message=f"Token válido para el usuario {user_id}"
     )
@@ -399,15 +368,7 @@ async def update_profile(
     user_id: str = Depends(get_current_user_id),
     supabase: Client = Depends(get_supabase)
 ):
-    """
-    Actualiza el perfil del usuario autenticado.
-    
-    - **full_name**: Nombre completo (opcional)
-    - **phone**: Número de teléfono (opcional)
-    - **avatar_url**: URL del avatar (opcional)
-    
-    **Requiere autenticación** (enviar token en header: `Authorization: Bearer <token>`)
-    """
+
     try:
         # Construir objeto de actualización solo con campos proporcionados
         update_data = {}
@@ -447,7 +408,7 @@ async def update_profile(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error actualizando perfil: {str(e)}")
+        #print(f"Error actualizando perfil: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar perfil: {str(e)}"

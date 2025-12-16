@@ -1,8 +1,3 @@
-"""
-CronoPlan API - Main Application
-Punto de entrada de la aplicación FastAPI
-"""
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -43,25 +38,23 @@ async def startup_event():
     Verifica la conexión a Supabase.
     """
     print("\n" + "="*50)
-    print(f"🚀 Iniciando {settings.PROJECT_NAME}")
-    print(f"📦 Versión: {settings.VERSION}")
-    print(f"🌍 Entorno: {settings.ENVIRONMENT}")
+    print(f"Iniciando {settings.PROJECT_NAME}")
+    print(f"Versión: {settings.VERSION}")
+    print(f"Entorno: {settings.ENVIRONMENT}")
     print("="*50 + "\n")
     
     # Probar conexión a Supabase
     await test_connection()
     
-    print("\n✅ Aplicación iniciada correctamente")
-    print(f"📝 Documentación: http://localhost:8000{settings.API_V1_PREFIX}/docs")
+    print("\nAplicación iniciada correctamente")
+    print(f"Documentación: http://localhost:8000{settings.API_V1_PREFIX}/docs")
     print("="*50 + "\n")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """
-    Se ejecuta al cerrar la aplicación.
-    """
-    print("\n👋 Cerrando aplicación...")
+
+    print("\nCerrando aplicación...")
 
 
 # =====================================================
@@ -105,6 +98,7 @@ async def api_root():
             "users": f"{settings.API_V1_PREFIX}/users",
             "boards": f"{settings.API_V1_PREFIX}/boards",
             "tasks": f"{settings.API_V1_PREFIX}/tasks",
+            "reminders": f"{settings.API_V1_PREFIX}/reminders",
             "labels": f"{settings.API_V1_PREFIX}/labels"
         },
         "documentation": f"{settings.API_V1_PREFIX}/docs"
@@ -115,33 +109,35 @@ async def api_root():
 # INCLUIR ROUTERS
 # =====================================================
 
-from app.routers import auth, boards, tasks
+from app.routers import auth, boards, tasks, reminders 
 
 # Auth Router
 app.include_router(
     auth.router, 
     prefix=f"{settings.API_V1_PREFIX}/auth", 
-    tags=["🔐 Autenticación"]
+    tags=["Autenticación"]
 )
 
 # Boards Router
 app.include_router(
     boards.router,
     prefix=f"{settings.API_V1_PREFIX}/boards",
-    tags=["📋 Tableros"]
+    tags=["Tableros"]
 )
 
 # Tasks Router
 app.include_router(
     tasks.router,
     prefix=f"{settings.API_V1_PREFIX}/tasks",
-    tags=["✅ Tareas"]
+    tags=["Tareas"]
 )
 
-# Próximos routers (descomentar cuando se creen):
-# from app.routers import labels
-# app.include_router(labels.router, prefix=f"{settings.API_V1_PREFIX}/labels", tags=["🏷️ Etiquetas"])
-
+# Reminders Router
+app.include_router(
+    reminders.router,
+    prefix=f"{settings.API_V1_PREFIX}/reminders",
+    tags=["Recordatorios"]
+)
 
 # =====================================================
 # EXCEPTION HANDLERS
@@ -181,5 +177,5 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.DEBUG  # Hot reload en modo desarrollo
+        reload=settings.DEBUG
     )

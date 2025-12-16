@@ -1,8 +1,3 @@
-"""
-CronoPlan API - Boards Router
-Endpoints para gestión de tableros
-"""
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 from app.database import get_supabase
@@ -55,7 +50,7 @@ async def get_boards(
         return boards_with_count
         
     except Exception as e:
-        print(f"❌ Error al obtener boards: {str(e)}")
+        #print(f"Error al obtener boards: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener tableros: {str(e)}"
@@ -99,13 +94,13 @@ async def create_board(
                 detail="No se pudo crear el tablero"
             )
         
-        print(f"✅ Board creado: {response.data[0]['name']}")
+        #print(f"Board creado: {response.data[0]['name']}")
         return response.data[0]
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error al crear board: {str(e)}")
+        #print(f"Error al crear board: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al crear tablero: {str(e)}"
@@ -149,7 +144,7 @@ async def get_board(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error al obtener board: {str(e)}")
+        #print(f"Error al obtener board: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener tablero: {str(e)}"
@@ -207,13 +202,13 @@ async def update_board(
                 detail="No se pudo actualizar el tablero"
             )
         
-        print(f"✅ Board actualizado: {board_id}")
+        #print(f"Board actualizado: {board_id}")
         return response.data[0]
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error al actualizar board: {str(e)}")
+        #print(f"Error al actualizar board: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar tablero: {str(e)}"
@@ -245,16 +240,16 @@ async def delete_board(
                 detail="Tablero no encontrado"
             )
         
-        # Eliminar board (las tareas quedarán con board_id null por ON DELETE SET NULL)
+        
         supabase.table("boards").delete().eq("id", board_id).execute()
         
-        print(f"✅ Board eliminado: {board_id}")
+        #print(f"Board eliminado: {board_id}")
         return None
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error al eliminar board: {str(e)}")
+        #print(f"Error al eliminar board: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al eliminar tablero: {str(e)}"

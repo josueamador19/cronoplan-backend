@@ -1,8 +1,3 @@
-"""
-CronoPlan API - Auth Schemas
-Modelos Pydantic para validación de requests/responses
-"""
-
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
