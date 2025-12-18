@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     DESCRIPTION: str = "API para gestión de tareas y productividad"
     
     # CORS
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://cronoplan-frontend.vercel.app,https://cronoplan.vercel.app"
     
     # Environment
     ENVIRONMENT: str = "development"
