@@ -95,6 +95,7 @@ async def api_root():
         "message": "CronoPlan API v1",
         "endpoints": {
             "auth": f"{settings.API_V1_PREFIX}/auth",
+            "profile": f"{settings.API_V1_PREFIX}/profile",  # ← Agregado
             "users": f"{settings.API_V1_PREFIX}/users",
             "boards": f"{settings.API_V1_PREFIX}/boards",
             "tasks": f"{settings.API_V1_PREFIX}/tasks",
@@ -109,13 +110,20 @@ async def api_root():
 # INCLUIR ROUTERS
 # =====================================================
 
-from app.routers import auth, boards, tasks, reminders 
+from app.routers import auth, profile, boards, tasks, reminders  
 
 # Auth Router
 app.include_router(
     auth.router, 
     prefix=f"{settings.API_V1_PREFIX}/auth", 
     tags=["Autenticación"]
+)
+
+# Profile Router
+app.include_router(
+    profile.router,
+    prefix=f"{settings.API_V1_PREFIX}/profile",
+    tags=["Perfil"]
 )
 
 # Boards Router

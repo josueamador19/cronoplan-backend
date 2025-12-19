@@ -15,9 +15,18 @@ from typing import Dict
 import jwt
 from datetime import datetime, timedelta
 from app.config import settings
+from pydantic import BaseModel
 
 
 router = APIRouter()
+
+
+# =====================================================
+# SCHEMAS ADICIONALES
+# =====================================================
+class GoogleAuthRequest(BaseModel):
+    """Schema para autenticación con Google"""
+    id_token: str  # Token de Google OAuth
 
 
 # =====================================================
@@ -49,7 +58,7 @@ def create_access_token(user_id: str, email: str) -> tuple[str, int]:
     return encoded_jwt, expires_in
 
 
-async def create_user_profile(supabase: Client, user_id: str, email: str, full_name: str = None, phone: str = None) -> Dict:
+async def create_user_profile(supabase: Client, user_id: str, email: str, full_name: str = None, phone: str = None, avatar_url: str = None) -> Dict:
     """
     Crea el perfil del usuario en la tabla users.
     """
@@ -58,7 +67,7 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
             "id": user_id,
             "full_name": full_name,
             "phone": phone,
-            "avatar_url": None
+            "avatar_url": avatar_url
         }
         
         response = supabase.table("users").insert(user_data).execute()
@@ -66,17 +75,15 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
         if response.data:
             return response.data[0]
         else:
-            
             return {**user_data, "email": email, "created_at": datetime.utcnow().isoformat()}
     except Exception as e:
         print(f"Error creando perfil de usuario: {e}")
-        
         return {
             "id": user_id,
             "email": email,
             "full_name": full_name,
             "phone": phone,
-            "avatar_url": None,
+            "avatar_url": avatar_url,
             "created_at": datetime.utcnow().isoformat()
         }
 
@@ -116,8 +123,6 @@ async def register(
             }
         })
         
-        # print(f"Respuesta de Supabase: {auth_response}")
-        
         if not auth_response.user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -126,8 +131,6 @@ async def register(
         
         user_id = auth_response.user.id
         user_email = auth_response.user.email
-        
-        #print(f"Usuario creado con ID: {user_id}")
         
         # Crear perfil en la tabla users
         user_profile = await create_user_profile(
@@ -165,7 +168,6 @@ async def register(
         raise
     except Exception as e:
         error_message = str(e)
-        #print(f"Error completo: {error_message}")
         
         # Detectar diferentes tipos de errores
         if "already registered" in error_message.lower() or "already been registered" in error_message.lower():
@@ -207,10 +209,7 @@ async def login(
     data: LoginRequest,
     supabase: Client = Depends(get_supabase)
 ):
-  
     try:
-        #print(f"Intento de login: {data.email}")
-        
         # Autenticar con Supabase
         auth_response = supabase.auth.sign_in_with_password({
             "email": data.email,
@@ -226,15 +225,12 @@ async def login(
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-       # print(f"Login exitoso para: {user_email}")
-        
         # Obtener perfil del usuario
         try:
             profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
             user_profile = profile_response.data if profile_response.data else {}
         except:
             # Si no existe perfil, crearlo
-            #print(f"Perfil no encontrado, creando uno nuevo...")
             user_profile = await create_user_profile(supabase, user_id, user_email)
         
         # Generar token de acceso
@@ -264,7 +260,6 @@ async def login(
         raise
     except Exception as e:
         error_message = str(e)
-        #print(f"Error en login: {error_message}")
         
         # Detectar errores de credenciales
         if "invalid" in error_message.lower() or "credentials" in error_message.lower() or "password" in error_message.lower():
@@ -276,6 +271,121 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al iniciar sesión: {error_message}"
+        )
+
+
+@router.post(
+    "/google",
+    response_model=AuthResponse,
+    summary="Iniciar sesión con Google",
+    description="Autentica un usuario usando Google OAuth. No requiere confirmación de email.",
+    responses={
+        200: {"description": "Login exitoso"},
+        400: {"model": ErrorResponse, "description": "Token de Google inválido"},
+        500: {"model": ErrorResponse, "description": "Error interno del servidor"}
+    }
+)
+async def google_auth(
+    data: GoogleAuthRequest,
+    supabase: Client = Depends(get_supabase)
+):
+    """
+    Endpoint para autenticación con Google OAuth.
+    
+    Flujo:
+    1. El frontend obtiene el id_token de Google
+    2. Envía el id_token a este endpoint
+    3. Supabase valida el token con Google
+    4. Se crea/actualiza el usuario automáticamente (sin confirmación de email)
+    5. Se retorna un access_token de tu aplicación
+    """
+    try:
+        print(f"Intento de login con Google")
+        
+        # Autenticar con Google usando Supabase
+        auth_response = supabase.auth.sign_in_with_id_token({
+            "provider": "google",
+            "token": data.id_token
+        })
+        
+        if not auth_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se pudo autenticar con Google. Token inválido."
+            )
+        
+        user_id = auth_response.user.id
+        user_email = auth_response.user.email
+        user_metadata = auth_response.user.user_metadata or {}
+        
+        # Extraer información de Google
+        full_name = user_metadata.get("full_name") or user_metadata.get("name")
+        avatar_url = user_metadata.get("avatar_url") or user_metadata.get("picture")
+        
+        print(f"Login con Google exitoso para: {user_email}")
+        
+        # Verificar si el perfil existe en la tabla users
+        try:
+            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
+            user_profile = profile_response.data
+            
+            # Si existe, actualizar avatar si es necesario
+            if avatar_url and user_profile.get("avatar_url") != avatar_url:
+                update_response = supabase.table("users").update({
+                    "avatar_url": avatar_url,
+                    "full_name": full_name or user_profile.get("full_name")
+                }).eq("id", user_id).execute()
+                user_profile = update_response.data[0] if update_response.data else user_profile
+                
+        except Exception as profile_error:
+            # Si no existe perfil, crearlo
+            print(f"Perfil no encontrado, creando uno nuevo para usuario de Google...")
+            user_profile = await create_user_profile(
+                supabase=supabase,
+                user_id=user_id,
+                email=user_email,
+                full_name=full_name,
+                avatar_url=avatar_url
+            )
+        
+        # Generar token de acceso de tu aplicación
+        access_token, expires_in = create_access_token(
+            user_id=user_id,
+            email=user_email
+        )
+        
+        # Construir respuesta
+        user_response = UserResponse(
+            id=user_id,
+            email=user_email,
+            full_name=user_profile.get("full_name"),
+            phone=user_profile.get("phone"),
+            avatar_url=user_profile.get("avatar_url"),
+            created_at=user_profile.get("created_at")
+        )
+        
+        return AuthResponse(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=expires_in,
+            user=user_response
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_message = str(e)
+        print(f"Error en login con Google: {error_message}")
+        
+        if "invalid" in error_message.lower() or "token" in error_message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Token de Google inválido o expirado"
+            )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al autenticar con Google: {error_message}"
         )
 
 
@@ -293,7 +403,6 @@ async def logout(
     user_id: str = Depends(get_current_user_id),
     supabase: Client = Depends(get_supabase)
 ):
-
     try:
         # Cerrar sesión en Supabase
         supabase.auth.sign_out()
@@ -322,7 +431,6 @@ async def logout(
 async def get_me(
     current_user: Dict = Depends(get_current_user)
 ):
-
     return UserResponse(
         id=current_user.get("id"),
         email=current_user.get("email"),
@@ -346,7 +454,6 @@ async def get_me(
 async def verify_token(
     user_id: str = Depends(get_current_user_id)
 ):
-
     return MessageResponse(
         message=f"Token válido para el usuario {user_id}"
     )
@@ -368,7 +475,6 @@ async def update_profile(
     user_id: str = Depends(get_current_user_id),
     supabase: Client = Depends(get_supabase)
 ):
-
     try:
         # Construir objeto de actualización solo con campos proporcionados
         update_data = {}
@@ -408,7 +514,6 @@ async def update_profile(
     except HTTPException:
         raise
     except Exception as e:
-        #print(f"Error actualizando perfil: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar perfil: {str(e)}"
