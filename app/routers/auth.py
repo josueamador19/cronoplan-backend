@@ -8,7 +8,8 @@ from app.schemas.auth import (
     UserResponse,
     ErrorResponse,
     MessageResponse,
-    UpdateProfileRequest
+    UpdateProfileRequest,
+    RefreshTokenRequest
 )
 from app.dependencies.auth import get_current_user, get_current_user_id
 from typing import Dict
@@ -46,7 +47,35 @@ def create_access_token(user_id: str, email: str) -> tuple[str, int]:
         "sub": user_id,
         "email": email,
         "exp": expire,
-        "iat": datetime.utcnow()
+        "iat": datetime.utcnow(),
+        "type": "access"
+    }
+    
+    encoded_jwt = jwt.encode(
+        to_encode, 
+        settings.SECRET_KEY, 
+        algorithm=settings.ALGORITHM
+    )
+    
+    return encoded_jwt, expires_in
+
+
+def create_refresh_token(user_id: str, email: str) -> tuple[str, int]:
+    """
+    Crea un JWT refresh token de larga duración.
+    
+    Returns:
+        tuple: (token, expires_in_seconds)
+    """
+    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expires_in = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+    
+    to_encode = {
+        "sub": user_id,
+        "email": email,
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "refresh"
     }
     
     encoded_jwt = jwt.encode(
@@ -141,8 +170,13 @@ async def register(
             phone=data.phone
         )
         
-        # Generar token de acceso
-        access_token, expires_in = create_access_token(
+        # Generar tokens de acceso y refresh
+        access_token, access_expires = create_access_token(
+            user_id=user_id,
+            email=user_email
+        )
+        
+        refresh_token, refresh_expires = create_refresh_token(
             user_id=user_id,
             email=user_email
         )
@@ -159,8 +193,9 @@ async def register(
         
         return AuthResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=expires_in,
+            expires_in=access_expires,
             user=user_response
         )
         
@@ -233,8 +268,13 @@ async def login(
             # Si no existe perfil, crearlo
             user_profile = await create_user_profile(supabase, user_id, user_email)
         
-        # Generar token de acceso
-        access_token, expires_in = create_access_token(
+        # Generar tokens de acceso y refresh
+        access_token, access_expires = create_access_token(
+            user_id=user_id,
+            email=user_email
+        )
+        
+        refresh_token, refresh_expires = create_refresh_token(
             user_id=user_id,
             email=user_email
         )
@@ -251,8 +291,9 @@ async def login(
         
         return AuthResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=expires_in,
+            expires_in=access_expires,
             user=user_response
         )
         
@@ -275,6 +316,106 @@ async def login(
 
 
 @router.post(
+    "/refresh",
+    response_model=AuthResponse,
+    summary="Renovar token de acceso",
+    description="Genera un nuevo access_token usando el refresh_token",
+    responses={
+        200: {"description": "Token renovado exitosamente"},
+        401: {"model": ErrorResponse, "description": "Refresh token inválido o expirado"}
+    }
+)
+async def refresh_token(
+    data: RefreshTokenRequest,
+    supabase: Client = Depends(get_supabase)
+):
+    """
+    Endpoint para renovar el access token usando un refresh token válido.
+    
+    Este endpoint permite mantener la sesión del usuario sin necesidad de
+    volver a hacer login cuando el access token expira.
+    """
+    try:
+        # Decodificar y validar refresh token
+        payload = jwt.decode(
+            data.refresh_token, 
+            settings.SECRET_KEY, 
+            algorithms=[settings.ALGORITHM]
+        )
+        
+        # Verificar que sea un refresh token
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido: no es un refresh token"
+            )
+        
+        user_id = payload.get("sub")
+        email = payload.get("email")
+        
+        if not user_id or not email:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido: información de usuario incompleta"
+            )
+        
+        # Verificar que el usuario aún exista en la base de datos
+        try:
+            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
+            if not profile_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Usuario no encontrado"
+                )
+            user_profile = profile_response.data
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Usuario no encontrado"
+            )
+        
+        # Generar nuevos tokens
+        new_access_token, access_expires = create_access_token(user_id, email)
+        new_refresh_token, refresh_expires = create_refresh_token(user_id, email)
+        
+        user_response = UserResponse(
+            id=user_id,
+            email=email,
+            full_name=user_profile.get("full_name"),
+            phone=user_profile.get("phone"),
+            avatar_url=user_profile.get("avatar_url"),
+            created_at=user_profile.get("created_at")
+        )
+        
+        return AuthResponse(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+            token_type="bearer",
+            expires_in=access_expires,
+            user=user_response
+        )
+        
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token expirado. Por favor, inicia sesión nuevamente."
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token inválido"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error al renovar token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Error al renovar token"
+        )
+
+
+@router.post(
     "/google",
     response_model=AuthResponse,
     summary="Iniciar sesión con Google",
@@ -289,16 +430,6 @@ async def google_auth(
     data: GoogleAuthRequest,
     supabase: Client = Depends(get_supabase)
 ):
-    """
-    Endpoint para autenticación con Google OAuth.
-    
-    Flujo:
-    1. El frontend obtiene el id_token de Google
-    2. Envía el id_token a este endpoint
-    3. Supabase valida el token con Google
-    4. Se crea/actualiza el usuario automáticamente (sin confirmación de email)
-    5. Se retorna un access_token de tu aplicación
-    """
     try:
         print(f"Intento de login con Google")
         
@@ -348,8 +479,13 @@ async def google_auth(
                 avatar_url=avatar_url
             )
         
-        # Generar token de acceso de tu aplicación
-        access_token, expires_in = create_access_token(
+        # Generar tokens de acceso y refresh
+        access_token, access_expires = create_access_token(
+            user_id=user_id,
+            email=user_email
+        )
+        
+        refresh_token, refresh_expires = create_refresh_token(
             user_id=user_id,
             email=user_email
         )
@@ -366,8 +502,9 @@ async def google_auth(
         
         return AuthResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=expires_in,
+            expires_in=access_expires,
             user=user_response
         )
         

@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 días
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hora (más seguro)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # 30 días
     
     # API
     API_V1_PREFIX: str = "/api/v1"
@@ -69,4 +70,6 @@ if __name__ == "__main__":
     print(f"API Prefix: {settings.API_V1_PREFIX}")
     print(f"Supabase URL: {settings.SUPABASE_URL}")
     print(f"CORS Origins: {settings.cors_origins_list}")
+    print(f"Access Token Expiration: {settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes")
+    print(f"Refresh Token Expiration: {settings.REFRESH_TOKEN_EXPIRE_DAYS} days")
     print("=" * 30)

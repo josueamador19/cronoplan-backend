@@ -39,6 +39,18 @@ class LoginRequest(BaseModel):
         }
 
 
+class RefreshTokenRequest(BaseModel):
+    """Schema para renovar el access token usando refresh token"""
+    refresh_token: str = Field(..., description="Refresh token válido")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            }
+        }
+
+
 class UpdateProfileRequest(BaseModel):
     """Schema para actualizar perfil de usuario"""
     full_name: Optional[str] = Field(None, description="Nombre completo")
@@ -75,16 +87,18 @@ class UserResponse(BaseModel):
 class AuthResponse(BaseModel):
     """Schema para respuesta de autenticación exitosa"""
     access_token: str = Field(..., description="JWT token de acceso")
+    refresh_token: str = Field(..., description="JWT refresh token de larga duración")
     token_type: str = Field(default="bearer", description="Tipo de token")
-    expires_in: int = Field(..., description="Segundos hasta que expire el token")
+    expires_in: int = Field(..., description="Segundos hasta que expire el access token")
     user: UserResponse = Field(..., description="Información del usuario")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                 "token_type": "bearer",
-                "expires_in": 604800,
+                "expires_in": 3600,
                 "user": {
                     "id": "550e8400-e29b-41d4-a716-446655440000",
                     "email": "usuario@ejemplo.com",
