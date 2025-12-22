@@ -75,6 +75,7 @@ async def root():
 
 
 @app.get("/health")
+@app.head("/health")
 async def health_check():
     """
     Endpoint de salud - verificar que la API está funcionando
