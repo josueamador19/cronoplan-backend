@@ -13,14 +13,14 @@ security = HTTPBearer()
 
 class AuthDependency:
 
-    
     @staticmethod
-    def verify_token(token: str) -> Dict:
+    def verify_token(token: str, token_type: str = "access") -> Dict:
         """
         Verifica y decodifica un JWT token.
         
         Args:
             token: JWT token a verificar
+            token_type: Tipo de token esperado ("access" o "refresh")
             
         Returns:
             Dict con la información del payload del token
@@ -35,8 +35,31 @@ class AuthDependency:
                 settings.SECRET_KEY,
                 algorithms=[settings.ALGORITHM]
             )
+            
+            # VALIDAR EL TIPO DE TOKEN
+            token_type_in_payload = payload.get("type")
+            
+            if token_type_in_payload != token_type:
+                #print(f"Tipo de token incorrecto. Esperado: {token_type}, Recibido: {token_type_in_payload}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Token inválido: se esperaba un {token_type} token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # VALIDAR QUE TENGA LOS CAMPOS NECESARIOS
+            if not payload.get("sub"):
+                #print("Token sin campo 'sub' (user_id)")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token inválido: información de usuario incompleta",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
             return payload
+            
         except jwt.ExpiredSignatureError:
+            #print(f"Token expirado: {token_type}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Tu sesión ha expirado. Por favor, inicia sesión nuevamente.",
@@ -44,7 +67,6 @@ class AuthDependency:
             )
         except jwt.InvalidTokenError as e:
             #print(f"Error al decodificar token: {str(e)}")
- 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token de autenticación inválido. Por favor, inicia sesión.",
@@ -70,27 +92,24 @@ class AuthDependency:
         token = credentials.credentials
         
         try:
-            # Verificar token usando JWT
-            payload = AuthDependency.verify_token(token)
+            # Verificar que sea un ACCESS token
+            payload = AuthDependency.verify_token(token, token_type="access")
             user_id = payload.get("sub")
             
+            # Esta validación ya se hace en verify_token, pero por seguridad...
             if not user_id:
-                #print("No se encontró 'sub' en el payload del token")
-                
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="No se pudo identificar al usuario. Por favor, inicia sesión.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             
-            #print(f" Usuario autenticado: {user_id}")
             return user_id
             
         except HTTPException:
             raise
         except Exception as e:
             #print(f"Error en autenticación: {str(e)}")
-            
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="No se pudo validar las credenciales. Por favor, inicia sesión.",
@@ -120,7 +139,6 @@ class AuthDependency:
             response = supabase.table("users").select("*").eq("id", user_id).single().execute()
             
             if not response.data:
-                # ⭐ MENSAJE MEJORADO para usuario no encontrado
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Usuario no encontrado. Es posible que tu cuenta haya sido eliminada."
