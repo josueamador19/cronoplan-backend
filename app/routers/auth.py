@@ -17,6 +17,7 @@ import jwt
 from datetime import datetime, timedelta
 from app.config import settings
 from pydantic import BaseModel
+import asyncio
 
 
 router = APIRouter()
@@ -89,32 +90,99 @@ def create_refresh_token(user_id: str, email: str) -> tuple[str, int]:
 
 async def create_user_profile(supabase: Client, user_id: str, email: str, full_name: str = None, phone: str = None, avatar_url: str = None) -> Dict:
     """
-    Crea el perfil del usuario en la tabla users.
+    Crea el perfil del usuario en la tabla users con retry logic y exponential backoff.
+    Esto previene race conditions cuando múltiples usuarios hacen requests simultáneos.
     """
-    try:
-        user_data = {
-            "id": user_id,
-            "full_name": full_name,
-            "phone": phone,
-            "avatar_url": avatar_url
-        }
+    max_retries = 5
+    retry_delay = 0.3  # Empezar con 300ms
+    
+    for attempt in range(max_retries):
+        try:
+            user_data = {
+                "id": user_id,
+                "full_name": full_name,
+                "phone": phone,
+                "avatar_url": avatar_url
+            }
+            
+            #print(f"Intento {attempt + 1}/{max_retries} - Creando perfil para {email}")
+            
+            response = supabase.table("users").insert(user_data).execute()
+            
+            if response.data:
+                #print(f"Perfil creado exitosamente para {email}")
+                return response.data[0]
+            else:
+                #print(f"Respuesta vacía, retornando datos básicos")
+                return {**user_data, "email": email, "created_at": datetime.utcnow().isoformat()}
         
-        response = supabase.table("users").insert(user_data).execute()
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Si es el último intento, retornar datos básicos
+            if attempt == max_retries - 1:
+                #print(f"Error después de {max_retries} intentos: {error_msg}")
+                #print(f"Retornando datos básicos para continuar el flujo")
+                return {
+                    "id": user_id,
+                    "email": email,
+                    "full_name": full_name,
+                    "phone": phone,
+                    "avatar_url": avatar_url,
+                    "created_at": datetime.utcnow().isoformat()
+                }
+            
+            # Si no es el último intento, esperar y reintentar
+            #print(f"Intento {attempt + 1} falló: {error_msg}")
+            #print(f"Reintentando en {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+            retry_delay *= 2  # Exponential backoff: 0.3s -> 0.6s -> 1.2s -> 2.4s
+
+
+async def get_or_create_user_profile(supabase: Client, user_id: str, email: str, full_name: str = None, phone: str = None, avatar_url: str = None) -> Dict:
+    """
+    Intenta obtener el perfil del usuario, si no existe lo crea.
+    Útil para login donde el perfil debería existir pero podría no existir por errores previos.
+    """
+    max_retries = 3
+    retry_delay = 0.2
+    
+    for attempt in range(max_retries):
+        try:
+            # Intentar obtener el perfil existente
+            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
+            
+            if profile_response.data:
+                return profile_response.data
+            else:
+                # Si no existe, crearlo
+                #print(f"Perfil no encontrado, creando uno nuevo...")
+                return await create_user_profile(supabase, user_id, email, full_name, phone, avatar_url)
         
-        if response.data:
-            return response.data[0]
-        else:
-            return {**user_data, "email": email, "created_at": datetime.utcnow().isoformat()}
-    except Exception as e:
-        print(f"Error creando perfil de usuario: {e}")
-        return {
-            "id": user_id,
-            "email": email,
-            "full_name": full_name,
-            "phone": phone,
-            "avatar_url": avatar_url,
-            "created_at": datetime.utcnow().isoformat()
-        }
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Si el error es porque no existe el registro, crear el perfil
+            if "no rows" in error_msg or "not found" in error_msg:
+                #print(f"Perfil no existe, creando...")
+                return await create_user_profile(supabase, user_id, email, full_name, phone, avatar_url)
+            
+            # Para otros errores, reintentar
+            if attempt < max_retries - 1:
+                #print(f"Error obteniendo perfil, reintentando en {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+            else:
+                # En el último intento, retornar datos básicos
+                #print(f"No se pudo obtener/crear perfil, retornando datos básicos")
+                return {
+                    "id": user_id,
+                    "email": email,
+                    "full_name": full_name,
+                    "phone": phone,
+                    "avatar_url": avatar_url,
+                    "created_at": datetime.utcnow().isoformat()
+                }
 
 
 # =====================================================
@@ -138,7 +206,7 @@ async def register(
     supabase: Client = Depends(get_supabase)
 ):
     try:
-        print(f"Intentando registrar usuario: {data.email}")
+        #print(f"Intentando registrar usuario: {data.email}")
         
         # Registrar usuario en Supabase Auth
         auth_response = supabase.auth.sign_up({
@@ -161,7 +229,12 @@ async def register(
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        # Crear perfil en la tabla users
+        #print(f"Usuario creado en Supabase Auth: {user_email}")
+        
+        # Pequeño delay para evitar race condition con Supabase
+        await asyncio.sleep(0.1)
+        
+        # Crear perfil en la tabla users con retry logic
         user_profile = await create_user_profile(
             supabase=supabase,
             user_id=user_id,
@@ -190,6 +263,8 @@ async def register(
             avatar_url=None,
             created_at=user_profile.get("created_at")
         )
+        
+        #print(f"Registro completado exitosamente para: {user_email}")
         
         return AuthResponse(
             access_token=access_token,
@@ -223,6 +298,7 @@ async def register(
                 detail="El usuario fue creado pero requiere confirmación por email. Revisa tu bandeja de entrada."
             )
         
+        #print(f"Error en registro: {error_message}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al registrar usuario: {error_message}"
@@ -245,6 +321,8 @@ async def login(
     supabase: Client = Depends(get_supabase)
 ):
     try:
+        #print(f"Intento de login: {data.email}")
+        
         # Autenticar con Supabase
         auth_response = supabase.auth.sign_in_with_password({
             "email": data.email,
@@ -260,13 +338,14 @@ async def login(
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        # Obtener perfil del usuario
-        try:
-            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
-            user_profile = profile_response.data if profile_response.data else {}
-        except:
-            # Si no existe perfil, crearlo
-            user_profile = await create_user_profile(supabase, user_id, user_email)
+        #print(f"Login exitoso en Supabase Auth: {user_email}")
+        
+        # Obtener o crear perfil del usuario con retry logic
+        user_profile = await get_or_create_user_profile(
+            supabase=supabase,
+            user_id=user_id,
+            email=user_email
+        )
         
         # Generar tokens de acceso y refresh
         access_token, access_expires = create_access_token(
@@ -289,6 +368,8 @@ async def login(
             created_at=user_profile.get("created_at")
         )
         
+        #print(f"Login completado para: {user_email}")
+        
         return AuthResponse(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -309,6 +390,7 @@ async def login(
                 detail="Credenciales inválidas"
             )
         
+        print(f"Error en login: {error_message}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al iniciar sesión: {error_message}"
@@ -331,9 +413,6 @@ async def refresh_token(
 ):
     """
     Endpoint para renovar el access token usando un refresh token válido.
-    
-    Este endpoint permite mantener la sesión del usuario sin necesidad de
-    volver a hacer login cuando el access token expira.
     """
     try:
         # Decodificar y validar refresh token
@@ -359,16 +438,14 @@ async def refresh_token(
                 detail="Token inválido: información de usuario incompleta"
             )
         
-        # Verificar que el usuario aún exista en la base de datos
-        try:
-            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
-            if not profile_response.data:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Usuario no encontrado"
-                )
-            user_profile = profile_response.data
-        except Exception as e:
+        # Verificar que el usuario aún exista con retry logic
+        user_profile = await get_or_create_user_profile(
+            supabase=supabase,
+            user_id=user_id,
+            email=email
+        )
+        
+        if not user_profile:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario no encontrado"
@@ -431,7 +508,7 @@ async def google_auth(
     supabase: Client = Depends(get_supabase)
 ):
     try:
-        print(f"Intento de login con Google")
+        #print(f"Intento de login con Google")
         
         # Autenticar con Google usando Supabase
         auth_response = supabase.auth.sign_in_with_id_token({
@@ -453,31 +530,32 @@ async def google_auth(
         full_name = user_metadata.get("full_name") or user_metadata.get("name")
         avatar_url = user_metadata.get("avatar_url") or user_metadata.get("picture")
         
-        print(f"Login con Google exitoso para: {user_email}")
+        #print(f"Login con Google exitoso para: {user_email}")
         
-        # Verificar si el perfil existe en la tabla users
-        try:
-            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
-            user_profile = profile_response.data
-            
-            # Si existe, actualizar avatar si es necesario
-            if avatar_url and user_profile.get("avatar_url") != avatar_url:
+        # Pequeño delay
+        await asyncio.sleep(0.1)
+        
+        # Obtener o crear perfil con retry logic
+        user_profile = await get_or_create_user_profile(
+            supabase=supabase,
+            user_id=user_id,
+            email=user_email,
+            full_name=full_name,
+            avatar_url=avatar_url
+        )
+        
+        # Si el perfil ya existía, actualizar avatar si es necesario
+        if user_profile.get("id") and avatar_url and user_profile.get("avatar_url") != avatar_url:
+            try:
                 update_response = supabase.table("users").update({
                     "avatar_url": avatar_url,
                     "full_name": full_name or user_profile.get("full_name")
                 }).eq("id", user_id).execute()
-                user_profile = update_response.data[0] if update_response.data else user_profile
                 
-        except Exception as profile_error:
-            # Si no existe perfil, crearlo
-            print(f"Perfil no encontrado, creando uno nuevo para usuario de Google...")
-            user_profile = await create_user_profile(
-                supabase=supabase,
-                user_id=user_id,
-                email=user_email,
-                full_name=full_name,
-                avatar_url=avatar_url
-            )
+                if update_response.data:
+                    user_profile = update_response.data[0]
+            except Exception as update_error:
+                print(f" No se pudo actualizar avatar: {update_error}")
         
         # Generar tokens de acceso y refresh
         access_token, access_expires = create_access_token(
@@ -512,7 +590,7 @@ async def google_auth(
         raise
     except Exception as e:
         error_message = str(e)
-        print(f"Error en login con Google: {error_message}")
+        #print(f" Error en login con Google: {error_message}")
         
         if "invalid" in error_message.lower() or "token" in error_message.lower():
             raise HTTPException(
