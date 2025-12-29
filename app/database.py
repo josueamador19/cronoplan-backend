@@ -1,34 +1,21 @@
 from supabase import create_client, Client
 from app.config import settings
-from functools import lru_cache
 
 
 class SupabaseClient:
     """
-    Cliente de Supabase singleton.
-    Maneja la conexión y proporciona acceso a la base de datos.
+    Cliente de Supabase - ahora sin singleton para Auth.
+    Cada request obtiene su propia instancia para evitar conflictos de sesión.
     """
     
-    _client: Client = None
+    # Mantener singleton solo para el service client (operaciones admin)
     _service_client: Client = None
-    
-    @classmethod
-    def get_client(cls) -> Client:
-        """
-        Retorna el cliente de Supabase con anon key.
-
-        """
-        if cls._client is None:
-            cls._client = create_client(
-                supabase_url=settings.SUPABASE_URL,
-                supabase_key=settings.SUPABASE_ANON_KEY
-            )
-        return cls._client
     
     @classmethod
     def get_service_client(cls) -> Client:
         """
         Retorna el cliente de Supabase con service role key.
+        Este SÍ puede ser singleton porque no maneja auth de usuarios.
         """
         if cls._service_client is None:
             cls._service_client = create_client(
@@ -38,24 +25,29 @@ class SupabaseClient:
         return cls._service_client
 
 
-@lru_cache()
 def get_supabase() -> Client:
     """
     Dependencia de FastAPI para obtener el cliente de Supabase.
-    Usar en endpoints como dependencia.
+    IMPORTANTE: Crea una NUEVA instancia por cada request para evitar
+    conflictos de sesión cuando múltiples usuarios están autenticados.
     
     Ejemplo:
         @app.get("/tasks")
         def get_tasks(supabase: Client = Depends(get_supabase)):
             ...
     """
-    return SupabaseClient.get_client()
+    # ✅ NUEVA INSTANCIA POR REQUEST - Evita conflictos de sesión
+    return create_client(
+        supabase_url=settings.SUPABASE_URL,
+        supabase_key=settings.SUPABASE_ANON_KEY
+    )
 
 
 def get_service_supabase() -> Client:
     """
     Dependencia para obtener el cliente con service role.
     Solo usar cuando sea absolutamente necesario.
+    Este SÍ puede ser singleton porque solo hace operaciones admin.
     """
     return SupabaseClient.get_service_client()
 
@@ -70,10 +62,10 @@ async def test_connection() -> bool:
         client = get_supabase()
         # Intenta hacer una query simple
         response = client.table('users').select("id").limit(1).execute()
-        print("Conexión a Supabase exitosa")
+        print("✅ Conexión a Supabase exitosa")
         return True
     except Exception as e:
-        print(f"Error conectando a Supabase: {e}")
+        print(f"❌ Error conectando a Supabase: {e}")
         return False
 
 
