@@ -1,21 +1,22 @@
+# =====================================================
+# ARCHIVO 1: database.py
+# =====================================================
 from supabase import create_client, Client
 from app.config import settings
 
 
 class SupabaseClient:
     """
-    Cliente de Supabase - ahora sin singleton para Auth.
-    Cada request obtiene su propia instancia para evitar conflictos de sesión.
+    Cliente de Supabase - Nueva instancia por request.
     """
     
-    # Mantener singleton solo para el service client (operaciones admin)
     _service_client: Client = None
     
     @classmethod
     def get_service_client(cls) -> Client:
         """
         Retorna el cliente de Supabase con service role key.
-        Este SÍ puede ser singleton porque no maneja auth de usuarios.
+        Este SÍ puede ser singleton porque solo hace operaciones admin.
         """
         if cls._service_client is None:
             cls._service_client = create_client(
@@ -47,20 +48,16 @@ def get_service_supabase() -> Client:
     """
     Dependencia para obtener el cliente con service role.
     Solo usar cuando sea absolutamente necesario.
-    Este SÍ puede ser singleton porque solo hace operaciones admin.
     """
     return SupabaseClient.get_service_client()
 
 
-# Para testing - verificar conexión
 async def test_connection() -> bool:
     """
     Prueba la conexión a Supabase.
-    Retorna True si la conexión es exitosa.
     """
     try:
         client = get_supabase()
-        # Intenta hacer una query simple
         response = client.table('users').select("id").limit(1).execute()
         print("✅ Conexión a Supabase exitosa")
         return True
