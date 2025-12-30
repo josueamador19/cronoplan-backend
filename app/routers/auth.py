@@ -244,6 +244,11 @@ async def login(
     data: LoginRequest,
     supabase: Client = Depends(get_supabase)
 ):
+    
+    import random
+    instance_id = random.randint(1000, 9999)
+    print(f"🔍 Login request - Instance ID: {instance_id} - User: {data.email}")
+    print(f"🔍 Supabase client ID: {id(supabase)}")
     try:
         # Autenticar con Supabase
         auth_response = supabase.auth.sign_in_with_password({
