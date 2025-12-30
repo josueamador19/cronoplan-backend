@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from supabase import Client, create_client 
+from supabase import Client
 from app.database import get_supabase
 from app.schemas.auth import (
     RegisterRequest,
@@ -121,99 +121,6 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
 # ENDPOINTS
 # =====================================================
 
-
-@router.post(
-    "/login",
-    response_model=AuthResponse,
-    summary="Iniciar sesión",
-    description="Autentica un usuario con email y contraseña",
-    responses={
-        200: {"description": "Login exitoso"},
-        401: {"model": ErrorResponse, "description": "Credenciales inválidas"},
-        500: {"model": ErrorResponse, "description": "Error interno del servidor"}
-    }
-)
-async def login(
-    data: LoginRequest,
-    supabase: Client = Depends(get_supabase)
-):
-    try:
-        # ✅ CREAR INSTANCIA COMPLETAMENTE NUEVA SOLO PARA AUTH
-        auth_client = create_client(
-            settings.SUPABASE_URL,
-            settings.SUPABASE_ANON_KEY
-        )
-        
-        # Autenticar con Supabase usando la instancia nueva
-        auth_response = auth_client.auth.sign_in_with_password({
-            "email": data.email,
-            "password": data.password
-        })
-        
-        if not auth_response.user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales inválidas"
-            )
-        
-        user_id = auth_response.user.id
-        user_email = auth_response.user.email
-        
-        # Obtener perfil del usuario (usando el cliente normal)
-        try:
-            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
-            user_profile = profile_response.data if profile_response.data else {}
-        except:
-            # Si no existe perfil, crearlo
-            user_profile = await create_user_profile(supabase, user_id, user_email)
-        
-        # Generar tokens de acceso y refresh
-        access_token, access_expires = create_access_token(
-            user_id=user_id,
-            email=user_email
-        )
-        
-        refresh_token, refresh_expires = create_refresh_token(
-            user_id=user_id,
-            email=user_email
-        )
-        
-        # Construir respuesta
-        user_response = UserResponse(
-            id=user_id,
-            email=user_email,
-            full_name=user_profile.get("full_name"),
-            phone=user_profile.get("phone"),
-            avatar_url=user_profile.get("avatar_url"),
-            created_at=user_profile.get("created_at")
-        )
-        
-        return AuthResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            token_type="bearer",
-            expires_in=access_expires,
-            user=user_response
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_message = str(e)
-        
-        # Detectar errores de credenciales
-        if "invalid" in error_message.lower() or "credentials" in error_message.lower() or "password" in error_message.lower():
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales inválidas"
-            )
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al iniciar sesión: {error_message}"
-        )
-
-
 @router.post(
     "/register",
     response_model=AuthResponse,
@@ -233,14 +140,8 @@ async def register(
     try:
         print(f"Intentando registrar usuario: {data.email}")
         
-        # ✅ CREAR INSTANCIA COMPLETAMENTE NUEVA SOLO PARA AUTH
-        auth_client = create_client(
-            settings.SUPABASE_URL,
-            settings.SUPABASE_ANON_KEY
-        )
-        
-        # Registrar usuario en Supabase Auth con instancia nueva
-        auth_response = auth_client.auth.sign_up({
+        # Registrar usuario en Supabase Auth
+        auth_response = supabase.auth.sign_up({
             "email": data.email,
             "password": data.password,
             "options": {
@@ -260,7 +161,7 @@ async def register(
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        # Crear perfil en la tabla users (usando el cliente normal)
+        # Crear perfil en la tabla users
         user_profile = await create_user_profile(
             supabase=supabase,
             user_id=user_id,
@@ -326,6 +227,93 @@ async def register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al registrar usuario: {error_message}"
         )
+
+
+@router.post(
+    "/login",
+    response_model=AuthResponse,
+    summary="Iniciar sesión",
+    description="Autentica un usuario con email y contraseña",
+    responses={
+        200: {"description": "Login exitoso"},
+        401: {"model": ErrorResponse, "description": "Credenciales inválidas"},
+        500: {"model": ErrorResponse, "description": "Error interno del servidor"}
+    }
+)
+async def login(
+    data: LoginRequest,
+    supabase: Client = Depends(get_supabase)
+):
+    try:
+        # Autenticar con Supabase
+        auth_response = supabase.auth.sign_in_with_password({
+            "email": data.email,
+            "password": data.password
+        })
+        
+        if not auth_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales inválidas"
+            )
+        
+        user_id = auth_response.user.id
+        user_email = auth_response.user.email
+        
+        # Obtener perfil del usuario
+        try:
+            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
+            user_profile = profile_response.data if profile_response.data else {}
+        except:
+            # Si no existe perfil, crearlo
+            user_profile = await create_user_profile(supabase, user_id, user_email)
+        
+        # Generar tokens de acceso y refresh
+        access_token, access_expires = create_access_token(
+            user_id=user_id,
+            email=user_email
+        )
+        
+        refresh_token, refresh_expires = create_refresh_token(
+            user_id=user_id,
+            email=user_email
+        )
+        
+        # Construir respuesta
+        user_response = UserResponse(
+            id=user_id,
+            email=user_email,
+            full_name=user_profile.get("full_name"),
+            phone=user_profile.get("phone"),
+            avatar_url=user_profile.get("avatar_url"),
+            created_at=user_profile.get("created_at")
+        )
+        
+        return AuthResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            expires_in=access_expires,
+            user=user_response
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_message = str(e)
+        
+        # Detectar errores de credenciales
+        if "invalid" in error_message.lower() or "credentials" in error_message.lower() or "password" in error_message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales inválidas"
+            )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al iniciar sesión: {error_message}"
+        )
+
 
 @router.post(
     "/refresh",
