@@ -1,7 +1,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
-from app.database import get_supabase
+from app.database import get_service_supabase
 from app.schemas.reminders import (
     ReminderCreate,
     ReminderUpdate,
@@ -58,7 +58,7 @@ async def enrich_reminder_data(reminder: dict, supabase: Client) -> dict:
 @router.get("/", response_model=List[ReminderResponse])
 async def get_reminders(
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Obtiene todos los recordatorios del usuario"""
     try:
@@ -87,7 +87,7 @@ async def get_reminders(
 async def create_reminder(
     reminder_data: ReminderCreate,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Crea un nuevo recordatorio"""
     try:
@@ -155,7 +155,7 @@ async def create_reminder(
 async def get_reminder(
     reminder_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Obtiene un recordatorio"""
     try:
@@ -189,7 +189,7 @@ async def update_reminder(
     reminder_id: int,
     reminder_data: ReminderUpdate,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Actualiza un recordatorio"""
     try:
@@ -243,7 +243,7 @@ async def update_reminder(
 async def delete_reminder(
     reminder_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Elimina un recordatorio"""
     try:
@@ -279,7 +279,7 @@ async def delete_reminder(
 @router.get("/notifications/all", response_model=List[NotificationResponse])
 async def get_notifications(
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Obtiene todas las notificaciones"""
     try:
@@ -302,7 +302,7 @@ async def get_notifications(
 @router.get("/notifications/unread", response_model=List[NotificationResponse])
 async def get_unread_notifications(
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Obtiene notificaciones no leídas"""
     try:
@@ -326,7 +326,7 @@ async def get_unread_notifications(
 async def mark_notification_as_read(
     notification_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Marca como leída"""
     try:
@@ -356,7 +356,7 @@ async def mark_notification_as_read(
 @router.post("/notifications/mark-all-read")
 async def mark_all_notifications_as_read(
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Marca todas como leídas"""
     try:

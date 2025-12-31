@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
-from app.database import get_supabase
+from app.database import get_service_supabase
 from app.schemas.auth import (
     RegisterRequest,
     LoginRequest,
@@ -135,7 +135,7 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
 )
 async def register(
     data: RegisterRequest,
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     try:
         # Crear cliente temporal
@@ -230,7 +230,7 @@ async def register(
 @router.post("/login", response_model=AuthResponse)
 async def login(
     data: LoginRequest,
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     import random
     instance_id = random.randint(1000, 9999)
@@ -323,7 +323,7 @@ async def login(
 )
 async def refresh_token(
     data: RefreshTokenRequest,
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """
     Endpoint para renovar el access token usando un refresh token válido.
@@ -424,7 +424,7 @@ async def refresh_token(
 )
 async def google_auth(
     data: GoogleAuthRequest,
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     try:
         print(f"Intento de login con Google")
@@ -534,7 +534,7 @@ async def google_auth(
 )
 async def logout(
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     try:
         # Cerrar sesión en Supabase
@@ -606,7 +606,7 @@ async def verify_token(
 async def update_profile(
     data: UpdateProfileRequest,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     try:
         # Construir objeto de actualización solo con campos proporcionados
@@ -651,3 +651,34 @@ async def update_profile(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar perfil: {str(e)}"
         )
+    
+
+
+
+
+
+@router.get("/test-service-client")
+async def test_service_client():
+    """
+    Endpoint temporal de debug - ELIMINAR en producción
+    """
+    try:
+        from app.database import get_service_supabase
+        service_client = get_service_supabase()
+        
+        # Probar lectura
+        users = service_client.table("users").select("id").limit(1).execute()
+        
+        return {
+            "status": "success",
+            "service_client_type": str(type(service_client)),
+            "can_read": len(users.data) >= 0,
+            "users_count": len(users.data)
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }

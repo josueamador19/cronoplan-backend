@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status as http_status, Query
 from supabase import Client
-from app.database import get_service_supabase, get_supabase
+from app.database import get_service_supabase, get_service_supabase
 from app.schemas.tasks import (
     TaskCreate,
     TaskUpdate,
@@ -132,7 +132,7 @@ async def get_tasks(
 async def create_task(
     task_data: TaskCreate,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Crea una nueva tarea con recordatorio opcional."""
     try:
@@ -222,7 +222,7 @@ async def create_task(
 async def get_task(
     task_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Obtiene una tarea específica por su ID."""
     try:
@@ -259,7 +259,7 @@ async def update_task(
     task_id: int,
     task_data: TaskUpdate,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Actualiza una tarea existente."""
     try:
@@ -329,7 +329,7 @@ async def update_task_status(
     task_id: int,
     status_data: TaskStatusUpdate,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Cambia solo el status."""
     try:
@@ -368,7 +368,7 @@ async def update_task_status(
 async def delete_task(
     task_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Elimina una tarea."""
     try:
@@ -401,7 +401,7 @@ async def delete_task(
 async def get_tasks_by_board(
     board_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Obtiene tareas de un board."""
     try:

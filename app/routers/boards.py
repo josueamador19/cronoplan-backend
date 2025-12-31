@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
-from app.database import get_service_supabase, get_supabase
+from app.database import get_service_supabase, get_service_supabase
 from app.schemas.boards import (
     BoardCreate,
     BoardUpdate,
@@ -62,7 +62,7 @@ async def get_boards(
 async def create_board(
     board_data: BoardCreate,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """
     Crea un nuevo board.
@@ -111,7 +111,7 @@ async def create_board(
 async def get_board(
     board_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """
     Obtiene un board específico por su ID.
@@ -156,7 +156,7 @@ async def update_board(
     board_id: int,
     board_data: BoardUpdate,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """
     Actualiza un board existente.
@@ -219,7 +219,7 @@ async def update_board(
 async def delete_board(
     board_id: int,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """
     Elimina un board.

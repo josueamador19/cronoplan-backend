@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from supabase import Client
-from app.database import get_supabase
+from app.database import get_service_supabase
 from app.dependencies.auth import get_current_user_id
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -102,7 +102,7 @@ async def delete_old_avatar(supabase: Client, user_id: str, old_avatar_url: str)
 async def update_name(
     data: UpdateProfileRequest,
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Actualiza el nombre del usuario"""
     try:
@@ -150,7 +150,7 @@ async def update_name(
 async def upload_avatar(
     file: UploadFile = File(..., description="Imagen de perfil (JPG, PNG, WEBP)"),
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Sube o actualiza el avatar del usuario"""
     try:
@@ -236,7 +236,7 @@ async def upload_avatar(
 )
 async def delete_avatar(
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)
 ):
     """Elimina el avatar del usuario"""
     try:
