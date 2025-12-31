@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
-from app.database import get_supabase
+from app.database import get_service_supabase, get_supabase
 from app.schemas.boards import (
     BoardCreate,
     BoardUpdate,
@@ -18,27 +18,21 @@ router = APIRouter()
 # ENDPOINTS
 # =====================================================
 
-@router.get(
-    "/",
-    response_model=List[BoardWithTaskCount],
-    summary="Listar todos los boards del usuario",
-    description="Obtiene todos los tableros del usuario autenticado con el contador de tareas"
-)
+@router.get("/", response_model=List[BoardWithTaskCount])
 async def get_boards(
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)  
 ):
     """
     Obtiene todos los boards del usuario con contador de tareas.
     """
     try:
-        # Obtener boards del usuario
         boards_response = supabase.table("boards").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        
         
         boards_with_count = []
         
         for board in boards_response.data:
-            # Contar tareas de cada board
             tasks_count = supabase.table("tasks").select("id", count="exact").eq("board_id", board["id"]).execute()
             
             board_data = {
@@ -47,15 +41,16 @@ async def get_boards(
             }
             boards_with_count.append(board_data)
         
+        print(f"📋 GET /boards - Retornando {len(boards_with_count)} boards para user {user_id}")
+        
         return boards_with_count
         
     except Exception as e:
-        #print(f"Error al obtener boards: {str(e)}")
+        print(f"Error al obtener boards: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener tableros: {str(e)}"
         )
-
 
 @router.post(
     "/",

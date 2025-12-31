@@ -1,6 +1,3 @@
-# =====================================================
-# ARCHIVO 1: database.py
-# =====================================================
 from supabase import create_client, Client
 from app.config import settings
 
@@ -23,6 +20,12 @@ class SupabaseClient:
                 supabase_url=settings.SUPABASE_URL,
                 supabase_key=settings.SUPABASE_SERVICE_KEY
             )
+            # ✅ IMPORTANTE: Asegurar que no hay sesión activa
+            try:
+                cls._service_client.auth.sign_out()
+            except:
+                pass
+        
         return cls._service_client
 
 
@@ -31,13 +34,7 @@ def get_supabase() -> Client:
     Dependencia de FastAPI para obtener el cliente de Supabase.
     IMPORTANTE: Crea una NUEVA instancia por cada request para evitar
     conflictos de sesión cuando múltiples usuarios están autenticados.
-    
-    Ejemplo:
-        @app.get("/tasks")
-        def get_tasks(supabase: Client = Depends(get_supabase)):
-            ...
     """
-    # ✅ NUEVA INSTANCIA POR REQUEST - Evita conflictos de sesión
     return create_client(
         supabase_url=settings.SUPABASE_URL,
         supabase_key=settings.SUPABASE_ANON_KEY
@@ -48,8 +45,23 @@ def get_service_supabase() -> Client:
     """
     Dependencia para obtener el cliente con service role.
     Solo usar cuando sea absolutamente necesario.
+    
+    IMPORTANTE: Siempre crea una NUEVA instancia para evitar
+    contaminación de sesión entre requests.
     """
-    return SupabaseClient.get_service_client()
+    # ✅ CREAR NUEVA INSTANCIA EN CADA REQUEST
+    client = create_client(
+        supabase_url=settings.SUPABASE_URL,
+        supabase_key=settings.SUPABASE_SERVICE_KEY
+    )
+    
+    # ✅ Asegurar que no hay sesión activa
+    try:
+        client.auth.sign_out()
+    except:
+        pass
+    
+    return client
 
 
 async def test_connection() -> bool:

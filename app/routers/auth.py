@@ -90,6 +90,7 @@ def create_refresh_token(user_id: str, email: str) -> tuple[str, int]:
 async def create_user_profile(supabase: Client, user_id: str, email: str, full_name: str = None, phone: str = None, avatar_url: str = None) -> Dict:
     """
     Crea el perfil del usuario en la tabla users.
+    IMPORTANTE: Debe recibir un cliente con Service Role para bypasear RLS
     """
     try:
         user_data = {
@@ -116,7 +117,6 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
             "created_at": datetime.utcnow().isoformat()
         }
 
-
 # =====================================================
 # ENDPOINTS
 # =====================================================
@@ -138,32 +138,31 @@ async def register(
     supabase: Client = Depends(get_supabase)
 ):
     try:
-        print(f"Intentando registrar usuario: {data.email}")
+        # Crear cliente temporal
+        from supabase import create_client
+        temp_client = create_client(
+            settings.SUPABASE_URL,
+            settings.SUPABASE_ANON_KEY
+        )
         
-        # Registrar usuario en Supabase Auth
-        auth_response = supabase.auth.sign_up({
-            "email": data.email,
-            "password": data.password,
-            "options": {
-                "data": {
-                    "full_name": data.full_name,
-                    "phone": data.phone
-                }
-            }
-        })
+        # Registrar usuario
+        auth_response = temp_client.auth.sign_up({...})
         
         if not auth_response.user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No se pudo crear el usuario. Verifica que el email sea válido y no esté ya registrado."
-            )
+            raise HTTPException(...)
         
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        # Crear perfil en la tabla users
+        # ✅ NO hacer sign_out - solo descartar
+        del temp_client
+        
+        # ✅ Usar service client para crear perfil
+        from app.database import get_service_supabase
+        service_client = get_service_supabase()
+        
         user_profile = await create_user_profile(
-            supabase=supabase,
+            supabase=service_client,  # ← Service client
             user_id=user_id,
             email=user_email,
             full_name=data.full_name,
@@ -228,30 +227,29 @@ async def register(
             detail=f"Error al registrar usuario: {error_message}"
         )
 
-
-@router.post(
-    "/login",
-    response_model=AuthResponse,
-    summary="Iniciar sesión",
-    description="Autentica un usuario con email y contraseña",
-    responses={
-        200: {"description": "Login exitoso"},
-        401: {"model": ErrorResponse, "description": "Credenciales inválidas"},
-        500: {"model": ErrorResponse, "description": "Error interno del servidor"}
-    }
-)
+@router.post("/login", response_model=AuthResponse)
 async def login(
     data: LoginRequest,
     supabase: Client = Depends(get_supabase)
 ):
-    
     import random
     instance_id = random.randint(1000, 9999)
     print(f"🔍 Login request - Instance ID: {instance_id} - User: {data.email}")
-    print(f"🔍 Supabase client ID: {id(supabase)}")
+    
     try:
-        # Autenticar con Supabase
-        auth_response = supabase.auth.sign_in_with_password({
+        # ✅ Usar Service Role para verificar usuario sin establecer sesión
+        from app.database import get_service_supabase
+        service_client = get_service_supabase()
+        
+        # Crear cliente temporal SOLO para verificar la contraseña
+        from supabase import create_client
+        temp_client = create_client(
+            settings.SUPABASE_URL,
+            settings.SUPABASE_ANON_KEY
+        )
+        
+        # Verificar credenciales
+        auth_response = temp_client.auth.sign_in_with_password({
             "email": data.email,
             "password": data.password
         })
@@ -265,26 +263,20 @@ async def login(
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        # Obtener perfil del usuario
+        # ✅ NO hacer sign_out - simplemente descartar el temp_client
+        del temp_client
+        
+        # ✅ Obtener perfil usando SERVICE CLIENT (sin RLS)
         try:
-            profile_response = supabase.table("users").select("*").eq("id", user_id).single().execute()
+            profile_response = service_client.table("users").select("*").eq("id", user_id).single().execute()
             user_profile = profile_response.data if profile_response.data else {}
         except:
-            # Si no existe perfil, crearlo
-            user_profile = await create_user_profile(supabase, user_id, user_email)
+            user_profile = await create_user_profile(service_client, user_id, user_email)
         
-        # Generar tokens de acceso y refresh
-        access_token, access_expires = create_access_token(
-            user_id=user_id,
-            email=user_email
-        )
+        # Generar tokens JWT propios
+        access_token, access_expires = create_access_token(user_id, user_email)
+        refresh_token, refresh_expires = create_refresh_token(user_id, user_email)
         
-        refresh_token, refresh_expires = create_refresh_token(
-            user_id=user_id,
-            email=user_email
-        )
-        
-        # Construir respuesta
         user_response = UserResponse(
             id=user_id,
             email=user_email,
@@ -306,9 +298,9 @@ async def login(
         raise
     except Exception as e:
         error_message = str(e)
+        print(f"❌ Error en login: {error_message}")
         
-        # Detectar errores de credenciales
-        if "invalid" in error_message.lower() or "credentials" in error_message.lower() or "password" in error_message.lower():
+        if "invalid" in error_message.lower() or "credentials" in error_message.lower():
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Credenciales inválidas"
@@ -318,8 +310,7 @@ async def login(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al iniciar sesión: {error_message}"
         )
-
-
+    
 @router.post(
     "/refresh",
     response_model=AuthResponse,

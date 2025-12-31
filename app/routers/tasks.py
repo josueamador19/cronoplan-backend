@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status as http_status, Query
 from supabase import Client
-from app.database import get_supabase
+from app.database import get_service_supabase, get_supabase
 from app.schemas.tasks import (
     TaskCreate,
     TaskUpdate,
@@ -63,28 +63,24 @@ async def enrich_task_data(task: dict, supabase: Client) -> dict:
 # =====================================================
 # ENDPOINTS
 # =====================================================
-
-@router.get(
-    "/",
-    response_model=TaskListResponse,
-    summary="Listar tareas",
-    description="Obtiene todas las tareas del usuario con filtros opcionales"
-)
+@router.get("/", response_model=TaskListResponse)
 async def get_tasks(
-    board_id: Optional[int] = Query(None, description="Filtrar por board"),
-    status: Optional[str] = Query(None, description="Filtrar por status: todo, progress, done"),
-    priority: Optional[str] = Query(None, description="Filtrar por prioridad: Alta, Media, Baja"),
-    completed: Optional[bool] = Query(None, description="Filtrar por completadas"),
-    page: int = Query(1, ge=1, description="Número de página"),
-    page_size: int = Query(50, ge=1, le=100, description="Tareas por página"),
+    board_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    priority: Optional[str] = Query(None),
+    completed: Optional[bool] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_service_supabase)  
 ):
     """
     Obtiene todas las tareas del usuario con filtros opcionales.
     """
     try:
-        # Construir query base
+        print(f"📝 GET /tasks - User ID solicitante: {user_id}")
+        
+        
         query = supabase.table("tasks").select("*", count="exact").eq("user_id", user_id)
         
         # Aplicar filtros
@@ -101,22 +97,20 @@ async def get_tasks(
         offset = (page - 1) * page_size
         query = query.order("created_at", desc=True).range(offset, offset + page_size - 1)
         
-        # Ejecutar query
-        #print(f"Obteniendo tareas del usuario {user_id}...")
         response = query.execute()
         
-        #print(f"Tareas obtenidas: {len(response.data)}")
+        print(f"📝 GET /tasks - Tasks encontradas en DB: {len(response.data)} para user {user_id}")
         
-        # Enriquecer datos de cada tarea
+        # Enriquecer datos
         enriched_tasks = []
         for task in response.data:
             try:
                 enriched_task = await enrich_task_data(task, supabase)
                 enriched_tasks.append(enriched_task)
             except Exception as e:
-                #print(f"Error al enriquecer tarea {task.get('id')}: {str(e)}")
-                # Agregar la tarea sin enriquecer
                 enriched_tasks.append(task)
+        
+        print(f"GET /tasks - Retornando {len(enriched_tasks)} tasks para user {user_id}")
         
         return TaskListResponse(
             tasks=enriched_tasks,
@@ -126,15 +120,13 @@ async def get_tasks(
         )
         
     except Exception as e:
-        #print(f"Error completo al obtener tareas: {str(e)}")
+        print(f"Error completo al obtener tareas: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener tareas: {str(e)}"
         )
-
-
 
 @router.post("/", response_model=TaskResponse, status_code=http_status.HTTP_201_CREATED)
 async def create_task(

@@ -95,7 +95,7 @@ class AuthDependency:
             # Verificar que sea un ACCESS token
             payload = AuthDependency.verify_token(token, token_type="access")
             user_id = payload.get("sub")
-            
+            print(f"🔑 Token decoded - User ID: {user_id} - Token (primeros 20 chars): {token[:20]}...")
             # Esta validación ya se hace en verify_token, pero por seguridad...
             if not user_id:
                 raise HTTPException(
@@ -182,3 +182,5 @@ async def get_optional_user_id(
         return await get_current_user_id(credentials)
     except HTTPException:
         return None
+    
+
