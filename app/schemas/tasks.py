@@ -166,15 +166,3 @@ class TaskListResponse(BaseModel):
                 "page_size": 50
             }
         }
-
-
-
-class TaskMoveRequest(BaseModel):
-    board_id: Optional[int] = None  # None = mover a "sin tablero"
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "board_id": 5  # O null para mover a "sin tablero"
-            }
-        }

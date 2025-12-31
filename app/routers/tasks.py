@@ -6,9 +6,8 @@ from app.schemas.tasks import (
     TaskUpdate,
     TaskStatusUpdate,
     TaskResponse,
-    TaskListResponse,   
-    AssigneeResponse,
-    TaskMoveRequest    
+    TaskListResponse,
+    AssigneeResponse
 )
 from app.dependencies.auth import get_current_user_id
 from typing import List, Optional
@@ -437,102 +436,4 @@ async def get_tasks_by_board(
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
-        )
-    
-
-
-# Agregar este endpoint al router existente
-@router.patch(
-    "/{task_id}/move",
-    response_model=TaskResponse,
-    summary="Mover tarea a otro tablero",
-    description="Mueve una tarea a otro tablero o a 'sin tablero' (board_id=null)"
-)
-async def move_task_to_board(
-    task_id: int,
-    move_data: TaskMoveRequest,
-    user_id: str = Depends(get_current_user_id),
-    supabase: Client = Depends(get_supabase)
-):
-    """
-    Mueve una tarea a otro tablero o a 'sin tablero'.
-    
-    - **task_id**: ID de la tarea a mover
-    - **board_id**: ID del tablero destino (null para mover a 'sin tablero')
-    
-    Validaciones:
-    - La tarea debe pertenecer al usuario
-    - Si se especifica board_id, el tablero debe existir y pertenecer al usuario
-    """
-    try:
-        # 1. Verificar que la tarea existe y pertenece al usuario
-        task_check = supabase.table("tasks")\
-            .select("id, title, board_id")\
-            .eq("id", task_id)\
-            .eq("user_id", user_id)\
-            .execute()
-        
-        if not task_check.data:
-            raise HTTPException(
-                status_code=http_status.HTTP_404_NOT_FOUND,
-                detail="Tarea no encontrada"
-            )
-        
-        current_task = task_check.data[0]
-        old_board_id = current_task.get("board_id")
-        new_board_id = move_data.board_id
-        
-        # 2. Si el board_id es el mismo, no hacer nada
-        if old_board_id == new_board_id:
-            enriched_task = await enrich_task_data(current_task, supabase)
-            return enriched_task
-        
-        # 3. Si se especifica un nuevo board_id, verificar que existe y pertenece al usuario
-        if new_board_id is not None:
-            board_check = supabase.table("boards")\
-                .select("id, name")\
-                .eq("id", new_board_id)\
-                .eq("user_id", user_id)\
-                .execute()
-            
-            if not board_check.data:
-                raise HTTPException(
-                    status_code=http_status.HTTP_404_NOT_FOUND,
-                    detail="Tablero destino no encontrado"
-                )
-            
-            new_board_name = board_check.data[0]["name"]
-        else:
-            new_board_name = "sin tablero"
-        
-        # 4. Actualizar el board_id de la tarea
-        update_data = {"board_id": new_board_id}
-        
-        response = supabase.table("tasks")\
-            .update(update_data)\
-            .eq("id", task_id)\
-            .execute()
-        
-        if not response.data:
-            raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail="No se pudo mover la tarea"
-            )
-        
-        # 5. Enriquecer datos de la tarea actualizada
-        updated_task = await enrich_task_data(response.data[0], supabase)
-        
-        # Log para debugging (opcional)
-        old_board_text = f"tablero {old_board_id}" if old_board_id else "sin tablero"
-        print(f"Tarea '{current_task['title']}' movida de {old_board_text} a {new_board_name}")
-        
-        return updated_task
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error al mover tarea: {str(e)}")
-        raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al mover tarea: {str(e)}"
         )
