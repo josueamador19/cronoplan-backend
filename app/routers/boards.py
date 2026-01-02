@@ -41,12 +41,12 @@ async def get_boards(
             }
             boards_with_count.append(board_data)
         
-        print(f"📋 GET /boards - Retornando {len(boards_with_count)} boards para user {user_id}")
+        #print(f" GET /boards - Retornando {len(boards_with_count)} boards para user {user_id}")
         
         return boards_with_count
         
     except Exception as e:
-        print(f"Error al obtener boards: {str(e)}")
+        #print(f"Error al obtener boards: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener tableros: {str(e)}"

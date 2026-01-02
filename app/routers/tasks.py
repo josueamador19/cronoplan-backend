@@ -78,7 +78,7 @@ async def get_tasks(
     Obtiene todas las tareas del usuario con filtros opcionales.
     """
     try:
-        print(f"📝 GET /tasks - User ID solicitante: {user_id}")
+        #print(f"GET /tasks - User ID solicitante: {user_id}")
         
         
         query = supabase.table("tasks").select("*", count="exact").eq("user_id", user_id)
@@ -99,7 +99,7 @@ async def get_tasks(
         
         response = query.execute()
         
-        print(f"📝 GET /tasks - Tasks encontradas en DB: {len(response.data)} para user {user_id}")
+        #print(f" GET /tasks - Tasks encontradas en DB: {len(response.data)} para user {user_id}")
         
         # Enriquecer datos
         enriched_tasks = []
@@ -110,7 +110,7 @@ async def get_tasks(
             except Exception as e:
                 enriched_tasks.append(task)
         
-        print(f"GET /tasks - Retornando {len(enriched_tasks)} tasks para user {user_id}")
+        #print(f"GET /tasks - Retornando {len(enriched_tasks)} tasks para user {user_id}")
         
         return TaskListResponse(
             tasks=enriched_tasks,
@@ -120,7 +120,7 @@ async def get_tasks(
         )
         
     except Exception as e:
-        print(f"Error completo al obtener tareas: {str(e)}")
+        #print(f"Error completo al obtener tareas: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
@@ -207,7 +207,7 @@ async def create_task(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error: {str(e)}")
+        #print(f"Error: {str(e)}")
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

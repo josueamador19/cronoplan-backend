@@ -71,10 +71,10 @@ async def test_connection() -> bool:
     try:
         client = get_supabase()
         response = client.table('users').select("id").limit(1).execute()
-        print("✅ Conexión a Supabase exitosa")
+        print("Conexión a Supabase exitosa")
         return True
     except Exception as e:
-        print(f"❌ Error conectando a Supabase: {e}")
+        print(f" Error conectando a Supabase: {e}")
         return False
 
 

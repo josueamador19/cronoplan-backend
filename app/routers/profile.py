@@ -78,7 +78,7 @@ async def delete_old_avatar(supabase: Client, user_id: str, old_avatar_url: str)
         if "/avatars/" in old_avatar_url:
             path = old_avatar_url.split("/avatars/")[1]
             supabase.storage.from_(BUCKET_NAME).remove([path])
-            print(f"Avatar anterior eliminado: {path}")
+            #print(f"Avatar anterior eliminado: {path}")
     except Exception as e:
         print(f"Error al eliminar avatar anterior: {e}")
         # No lanzamos excepción, solo logueamos
@@ -217,7 +217,7 @@ async def upload_avatar(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error al subir avatar: {str(e)}")
+        #print(f"Error al subir avatar: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al subir avatar: {str(e)}"

@@ -95,7 +95,7 @@ class AuthDependency:
             # Verificar que sea un ACCESS token
             payload = AuthDependency.verify_token(token, token_type="access")
             user_id = payload.get("sub")
-            print(f"🔑 Token decoded - User ID: {user_id} - Token (primeros 20 chars): {token[:20]}...")
+            #print(f"Token decoded - User ID: {user_id} - Token (primeros 20 chars): {token[:20]}...")
             # Esta validación ya se hace en verify_token, pero por seguridad...
             if not user_id:
                 raise HTTPException(
@@ -149,7 +149,7 @@ class AuthDependency:
         except Exception as e:
             if isinstance(e, HTTPException):
                 raise e
-            print(f"❌ Error al obtener usuario: {str(e)}")
+            #print(f" Error al obtener usuario: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error al obtener información del usuario"

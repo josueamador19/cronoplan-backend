@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
-from app.database import get_service_supabase
+from app.database import get_service_supabase, get_supabase
 from app.schemas.auth import (
     RegisterRequest,
     LoginRequest,
@@ -100,14 +100,53 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
             "avatar_url": avatar_url
         }
         
+        #print(f" Insertando user_data: {user_data}")
+        
         response = supabase.table("users").insert(user_data).execute()
         
+        #print(f" Response from insert: {response}")
+        #print(f" Response.data: {response.data}")
         if response.data:
-            return response.data[0]
+        
+            if isinstance(response.data, list) and len(response.data) > 0:
+                created_user = response.data[0]
+            
+            elif isinstance(response.data, dict):
+                created_user = response.data
+            
+            else:
+                print(f"Tipo inesperado de response.data: {type(response.data)}")
+                created_user = {
+                    "id": user_id,
+                    "full_name": full_name,
+                    "phone": phone,
+                    "avatar_url": avatar_url,
+                    "created_at": datetime.utcnow().isoformat()
+                }
+            
+            # Asegurarse de que tiene email (que no se guarda en la tabla users)
+            if "email" not in created_user:
+                created_user["email"] = email
+            
+            return created_user
         else:
-            return {**user_data, "email": email, "created_at": datetime.utcnow().isoformat()}
+            # Si no hay data, retornar objeto construido manualmente
+            return {
+                "id": user_id,
+                "email": email,
+                "full_name": full_name,
+                "phone": phone,
+                "avatar_url": avatar_url,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
     except Exception as e:
-        print(f"Error creando perfil de usuario: {e}")
+        #print(f"Error creando perfil de usuario: {e}")
+        #print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # En caso de error, retornar objeto básico
         return {
             "id": user_id,
             "email": email,
@@ -116,79 +155,104 @@ async def create_user_profile(supabase: Client, user_id: str, email: str, full_n
             "avatar_url": avatar_url,
             "created_at": datetime.utcnow().isoformat()
         }
-
 # =====================================================
 # ENDPOINTS
 # =====================================================
-
-@router.post(
-    "/register",
-    response_model=AuthResponse,
+@router.post("/register", response_model=AuthResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Registrar nuevo usuario",
-    description="Crea una nueva cuenta de usuario con email y contraseña",
-    responses={
-        201: {"description": "Usuario registrado exitosamente"},
-        400: {"model": ErrorResponse, "description": "Email ya existe o datos inválidos"},
-        500: {"model": ErrorResponse, "description": "Error interno del servidor"}
-    }
-)
+    summary="Registrar nuevo usuario")
 async def register(
     data: RegisterRequest,
-    supabase: Client = Depends(get_service_supabase)
+    supabase: Client = Depends(get_supabase)
 ):
     try:
-        # Crear cliente temporal
+        #print(f"Intentando registrar usuario: {data.email}")
+        
+        # Crear cliente temporal para registro
         from supabase import create_client
         temp_client = create_client(
             settings.SUPABASE_URL,
             settings.SUPABASE_ANON_KEY
         )
         
-        # Registrar usuario
-        auth_response = temp_client.auth.sign_up({...})
+        # ✅ Registrar con metadata - el trigger creará el perfil automáticamente
+        auth_response = temp_client.auth.sign_up({
+            "email": data.email,
+            "password": data.password,
+            "options": {
+                "data": {
+                    "full_name": data.full_name,
+                    "phone": data.phone
+                }
+            }
+        })
         
         if not auth_response.user:
-            raise HTTPException(...)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se pudo crear el usuario."
+            )
         
         user_id = auth_response.user.id
         user_email = auth_response.user.email
         
-        # ✅ NO hacer sign_out - solo descartar
+        #print(f"Usuario creado en auth.users: {user_id}")
+        
+        # Liberar cliente temporal
         del temp_client
         
-        # ✅ Usar service client para crear perfil
-        from app.database import get_service_supabase
         service_client = get_service_supabase()
         
-        user_profile = await create_user_profile(
-            supabase=service_client,  # ← Service client
-            user_id=user_id,
-            email=user_email,
-            full_name=data.full_name,
-            phone=data.phone
-        )
         
-        # Generar tokens de acceso y refresh
-        access_token, access_expires = create_access_token(
-            user_id=user_id,
-            email=user_email
-        )
+        import asyncio
+        await asyncio.sleep(0.5)
         
-        refresh_token, refresh_expires = create_refresh_token(
-            user_id=user_id,
-            email=user_email
-        )
         
-        # Construir respuesta
+        try:
+            profile_response = service_client.table("users").select("*").eq("id", user_id).single().execute()
+            
+            if profile_response.data:
+                user_profile = profile_response.data
+                #print(f"Perfil recuperado del trigger: {user_profile}")
+            else:
+                # Fallback: crear manualmente si el trigger falló
+                #print("Perfil no encontrado, creando manualmente...")
+                user_profile = await create_user_profile(
+                    supabase=service_client,
+                    user_id=user_id,
+                    email=user_email,
+                    full_name=data.full_name,
+                    phone=data.phone
+                )
+        except Exception as profile_error:
+            #print(f" Error al obtener perfil: {profile_error}")
+            # Crear perfil manualmente como fallback
+            user_profile = await create_user_profile(
+                supabase=service_client,
+                user_id=user_id,
+                email=user_email,
+                full_name=data.full_name,
+                phone=data.phone
+            )
+        
+        # Asegurar que tenga email
+        if "email" not in user_profile:
+            user_profile["email"] = user_email
+        
+        # Generar tokens JWT
+        access_token, access_expires = create_access_token(user_id, user_email)
+        refresh_token, refresh_expires = create_refresh_token(user_id, user_email)
+        
         user_response = UserResponse(
             id=user_id,
             email=user_email,
-            full_name=data.full_name,
-            phone=data.phone,
-            avatar_url=None,
+            full_name=user_profile.get("full_name"),
+            phone=user_profile.get("phone"),
+            avatar_url=user_profile.get("avatar_url"),
             created_at=user_profile.get("created_at")
         )
+        
+        #print(f"Registro exitoso para: {user_email}")
         
         return AuthResponse(
             access_token=access_token,
@@ -202,30 +266,26 @@ async def register(
         raise
     except Exception as e:
         error_message = str(e)
+        #print(f"Error en register: {error_message}")
+        import traceback
+        traceback.print_exc()
         
-        # Detectar diferentes tipos de errores
-        if "already registered" in error_message.lower() or "already been registered" in error_message.lower():
+        # Mensajes de error mejorados
+        if "duplicate" in error_message.lower() or "already exists" in error_message.lower():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El email ya está registrado"
+                detail="Este email ya está registrado"
             )
-        
-        if "invalid" in error_message.lower() and "email" in error_message.lower():
+        elif "Database error" in error_message or "saving new user" in error_message:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El formato del email es inválido o Supabase no permite este email. Verifica la configuración de autenticación en Supabase (Settings > Authentication > Email Auth Settings)"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error en la base de datos. Por favor, contacta al administrador."
             )
-        
-        if "email" in error_message.lower() and "confirmation" in error_message.lower():
+        else:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El usuario fue creado pero requiere confirmación por email. Revisa tu bandeja de entrada."
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error al registrar usuario: {error_message}"
             )
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al registrar usuario: {error_message}"
-        )
 
 @router.post("/login", response_model=AuthResponse)
 async def login(
@@ -234,10 +294,10 @@ async def login(
 ):
     import random
     instance_id = random.randint(1000, 9999)
-    print(f"🔍 Login request - Instance ID: {instance_id} - User: {data.email}")
+    #print(f"🔍 Login request - Instance ID: {instance_id} - User: {data.email}")
     
     try:
-        # ✅ Usar Service Role para verificar usuario sin establecer sesión
+        #Usar Service Role para verificar usuario sin establecer sesión
         from app.database import get_service_supabase
         service_client = get_service_supabase()
         
@@ -298,7 +358,7 @@ async def login(
         raise
     except Exception as e:
         error_message = str(e)
-        print(f"❌ Error en login: {error_message}")
+        #print(f"Error en login: {error_message}")
         
         if "invalid" in error_message.lower() or "credentials" in error_message.lower():
             raise HTTPException(
@@ -404,7 +464,7 @@ async def refresh_token(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error al renovar token: {str(e)}")
+        #print(f"Error al renovar token: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Error al renovar token"
@@ -427,7 +487,7 @@ async def google_auth(
     supabase: Client = Depends(get_service_supabase)
 ):
     try:
-        print(f"Intento de login con Google")
+        #print(f"Intento de login con Google")
         
         # Autenticar con Google usando Supabase
         auth_response = supabase.auth.sign_in_with_id_token({
@@ -449,7 +509,7 @@ async def google_auth(
         full_name = user_metadata.get("full_name") or user_metadata.get("name")
         avatar_url = user_metadata.get("avatar_url") or user_metadata.get("picture")
         
-        print(f"Login con Google exitoso para: {user_email}")
+        #print(f"Login con Google exitoso para: {user_email}")
         
         # Verificar si el perfil existe en la tabla users
         try:
@@ -466,7 +526,7 @@ async def google_auth(
                 
         except Exception as profile_error:
             # Si no existe perfil, crearlo
-            print(f"Perfil no encontrado, creando uno nuevo para usuario de Google...")
+            #print(f"Perfil no encontrado, creando uno nuevo para usuario de Google...")
             user_profile = await create_user_profile(
                 supabase=supabase,
                 user_id=user_id,
@@ -508,7 +568,7 @@ async def google_auth(
         raise
     except Exception as e:
         error_message = str(e)
-        print(f"Error en login con Google: {error_message}")
+        #print(f"Error en login con Google: {error_message}")
         
         if "invalid" in error_message.lower() or "token" in error_message.lower():
             raise HTTPException(
