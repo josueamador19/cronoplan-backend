@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status as http_status, Query
+from fastapi.responses import JSONResponse
 from supabase import Client
-from app.database import get_service_supabase, get_service_supabase
+from app.database import get_service_supabase
 from app.schemas.tasks import (
     TaskCreate,
     TaskMoveRequest,
@@ -12,6 +13,7 @@ from app.schemas.tasks import (
 )
 from app.dependencies.auth import get_current_user_id
 from typing import List, Optional
+from pydantic import ValidationError
 
 
 router = APIRouter()
@@ -22,17 +24,14 @@ router = APIRouter()
 # =====================================================
 
 async def enrich_task_data(task: dict, supabase: Client) -> dict:
-    """
-    Enriquece los datos de una tarea con información adicional.
-    """
+    """Enriquece los datos de una tarea con información adicional."""
     try:
         # Agregar nombre del board
         if task.get("board_id"):
             try:
                 board = supabase.table("boards").select("name").eq("id", task["board_id"]).single().execute()
                 task["board"] = board.data["name"] if board.data else None
-            except Exception as e:
-                #print(f"Error al obtener board {task.get('board_id')}: {str(e)}")
+            except Exception:
                 task["board"] = None
         else:
             task["board"] = None
@@ -49,15 +48,13 @@ async def enrich_task_data(task: dict, supabase: Client) -> dict:
                     }
                 else:
                     task["assignee"] = None
-            except Exception as e:
-                #print(f"Error al obtener assignee {task.get('assignee_id')}: {str(e)}")
+            except Exception:
                 task["assignee"] = None
         else:
             task["assignee"] = None
         
         return task
     except Exception as e:
-        #print(f"Error al enriquecer tarea: {str(e)}")
         return task
 
 
@@ -75,13 +72,8 @@ async def get_tasks(
     user_id: str = Depends(get_current_user_id),
     supabase: Client = Depends(get_service_supabase)  
 ):
-    """
-    Obtiene todas las tareas del usuario con filtros opcionales.
-    """
+    """Obtiene todas las tareas del usuario con filtros opcionales."""
     try:
-        #print(f"GET /tasks - User ID solicitante: {user_id}")
-        
-        
         query = supabase.table("tasks").select("*", count="exact").eq("user_id", user_id)
         
         # Aplicar filtros
@@ -100,18 +92,14 @@ async def get_tasks(
         
         response = query.execute()
         
-        #print(f" GET /tasks - Tasks encontradas en DB: {len(response.data)} para user {user_id}")
-        
         # Enriquecer datos
         enriched_tasks = []
         for task in response.data:
             try:
                 enriched_task = await enrich_task_data(task, supabase)
                 enriched_tasks.append(enriched_task)
-            except Exception as e:
+            except Exception:
                 enriched_tasks.append(task)
-        
-        #print(f"GET /tasks - Retornando {len(enriched_tasks)} tasks para user {user_id}")
         
         return TaskListResponse(
             tasks=enriched_tasks,
@@ -121,13 +109,14 @@ async def get_tasks(
         )
         
     except Exception as e:
-        #print(f"Error completo al obtener tareas: {str(e)}")
+        #print(f"Error al obtener tareas: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener tareas: {str(e)}"
         )
+
 
 @router.post("/", response_model=TaskResponse, status_code=http_status.HTTP_201_CREATED)
 async def create_task(
@@ -196,30 +185,26 @@ async def create_task(
                     print(f"Recordatorio automático creado: {reminder_result.data[0]['id']}")
                 
             except Exception as e:
-                # No fallar la creación de tarea si falla el recordatorio
                 print(f"Error al crear recordatorio automático: {e}")
         
         # Enriquecer datos
         enriched_task = await enrich_task_data(task, supabase)
         
-        #print(f"Tarea creada: {task['title']}")
         return enriched_task
         
     except HTTPException:
         raise
     except Exception as e:
-        #print(f"Error: {str(e)}")
+        #print(f"Error al crear tarea: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
 
-@router.get(
-    "/{task_id}",
-    response_model=TaskResponse,
-    summary="Obtener una tarea específica",
-    description="Obtiene los detalles de una tarea específica"
-)
+
+@router.get("/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: int,
     user_id: str = Depends(get_current_user_id),
@@ -250,12 +235,7 @@ async def get_task(
         )
 
 
-@router.put(
-    "/{task_id}",
-    response_model=TaskResponse,
-    summary="Actualizar una tarea",
-    description="Actualiza los datos de una tarea"
-)
+@router.put("/{task_id}", response_model=TaskResponse)
 async def update_task(
     task_id: int,
     task_data: TaskUpdate,
@@ -264,8 +244,11 @@ async def update_task(
 ):
     """Actualiza una tarea existente."""
     try:
+        #print(f"=== UPDATE TASK {task_id} ===")
+        #print(f"Datos recibidos: {task_data.model_dump(exclude_unset=True)}")
+        
         # Verificar que la tarea existe
-        task_check = supabase.table("tasks").select("id").eq("id", task_id).eq("user_id", user_id).execute()
+        task_check = supabase.table("tasks").select("*").eq("id", task_id).eq("user_id", user_id).execute()
         
         if not task_check.data:
             raise HTTPException(
@@ -273,59 +256,58 @@ async def update_task(
                 detail="Tarea no encontrada"
             )
         
-        # Construir update
-        update_data = {}
-        if task_data.title is not None:
-            update_data["title"] = task_data.title
-        if task_data.description is not None:
-            update_data["description"] = task_data.description
-        if task_data.board_id is not None:
-            update_data["board_id"] = task_data.board_id
-        if task_data.priority is not None:
-            update_data["priority"] = task_data.priority
-        if task_data.status is not None:
-            update_data["status"] = task_data.status
-            if task_data.status == "done":
-                update_data["completed"] = True
-        if task_data.status_badge is not None:
-            update_data["status_badge"] = task_data.status_badge
-        if task_data.status_badge_color is not None:
-            update_data["status_badge_color"] = task_data.status_badge_color
-        if task_data.assignee_id is not None:
-            update_data["assignee_id"] = task_data.assignee_id
-        if task_data.due_date is not None:
-            update_data["due_date"] = task_data.due_date 
-        if task_data.completed is not None:
-            update_data["completed"] = task_data.completed
+        #print(f"Tarea actual en DB: status={task_check.data[0].get('status')}")
+        
+        # Construir update solo con campos que fueron enviados
+        update_data = task_data.model_dump(exclude_unset=True)
+        
+        # Lógica especial para status=done
+        if update_data.get("status") == "done":
+            update_data["completed"] = True
         
         if not update_data:
             raise HTTPException(
                 status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail="Debes proporcionar al menos un campo"
+                detail="No se proporcionaron campos para actualizar"
             )
         
+        #print(f"Datos a actualizar en DB: {update_data}")
+        
+        # Actualizar en base de datos
         response = supabase.table("tasks").update(update_data).eq("id", task_id).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="No se pudo actualizar la tarea"
+            )
+        
+        #print(f"Tarea actualizada en DB: status={response.data[0].get('status')}")
+        
+        # Enriquecer datos
         task = await enrich_task_data(response.data[0], supabase)
         
-        #print(f"Tarea actualizada: {task_id}")
         return task
         
     except HTTPException:
         raise
+    except ValidationError as e:
+        #print(f"Error de validación: {e}")
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Error de validación: {e.errors()}"
+        )
     except Exception as e:
-        #print(f"Error: {str(e)}")
+        #print(f"Error al actualizar tarea: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
 
 
-@router.patch(
-    "/{task_id}/status",
-    response_model=TaskResponse,
-    summary="Cambiar status",
-    description="Cambia solo el status (drag & drop)"
-)
+@router.patch("/{task_id}/status", response_model=TaskResponse)
 async def update_task_status(
     task_id: int,
     status_data: TaskStatusUpdate,
@@ -349,7 +331,6 @@ async def update_task_status(
         response = supabase.table("tasks").update(update_data).eq("id", task_id).execute()
         task = await enrich_task_data(response.data[0], supabase)
         
-        #print(f"Status actualizado: {task_id} -> {status_data.status}")
         return task
         
     except HTTPException:
@@ -361,11 +342,7 @@ async def update_task_status(
         )
 
 
-@router.delete(
-    "/{task_id}",
-    status_code=http_status.HTTP_204_NO_CONTENT,
-    summary="Eliminar tarea"
-)
+@router.delete("/{task_id}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def delete_task(
     task_id: int,
     user_id: str = Depends(get_current_user_id),
@@ -382,7 +359,6 @@ async def delete_task(
             )
         
         supabase.table("tasks").delete().eq("id", task_id).execute()
-        #print(f"Tarea eliminada: {task_id}")
         return None
         
     except HTTPException:
@@ -394,11 +370,7 @@ async def delete_task(
         )
 
 
-@router.get(
-    "/board/{board_id}",
-    response_model=List[TaskResponse],
-    summary="Tareas de un board"
-)
+@router.get("/board/{board_id}", response_model=List[TaskResponse])
 async def get_tasks_by_board(
     board_id: int,
     user_id: str = Depends(get_current_user_id),
@@ -430,33 +402,18 @@ async def get_tasks_by_board(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-    
 
 
-@router.patch(
-    "/{task_id}/move",
-    response_model=TaskResponse,
-    summary="Mover tarea a otro tablero",
-    description="Mueve una tarea a otro tablero o a 'sin tablero' (board_id=null)"
-)
+@router.patch("/{task_id}/move", response_model=TaskResponse)
 async def move_task_to_board(
     task_id: int,
     move_data: TaskMoveRequest,
     user_id: str = Depends(get_current_user_id),
     supabase: Client = Depends(get_service_supabase)
 ):
-    """
-    Mueve una tarea a otro tablero o a 'sin tablero'.
-    
-    - **task_id**: ID de la tarea a mover
-    - **board_id**: ID del tablero destino (null para mover a 'sin tablero')
-    
-    Validaciones:
-    - La tarea debe pertenecer al usuario
-    - Si se especifica board_id, el tablero debe existir y pertenecer al usuario
-    """
+    """Mueve una tarea a otro tablero o a 'sin tablero'."""
     try:
-        # 1. Verificar que la tarea existe y pertenece al usuario
+        # Verificar que la tarea existe
         task_check = supabase.table("tasks")\
             .select("id, title, board_id")\
             .eq("id", task_id)\
@@ -473,12 +430,12 @@ async def move_task_to_board(
         old_board_id = current_task.get("board_id")
         new_board_id = move_data.board_id
         
-        # 2. Si el board_id es el mismo, no hacer nada
+        # Si el board_id es el mismo, no hacer nada
         if old_board_id == new_board_id:
             enriched_task = await enrich_task_data(current_task, supabase)
             return enriched_task
         
-        # 3. Si se especifica un nuevo board_id, verificar que existe y pertenece al usuario
+        # Verificar nuevo board si existe
         if new_board_id is not None:
             board_check = supabase.table("boards")\
                 .select("id, name")\
@@ -496,7 +453,7 @@ async def move_task_to_board(
         else:
             new_board_name = "sin tablero"
         
-        # 4. Actualizar el board_id de la tarea
+        # Actualizar el board_id
         update_data = {"board_id": new_board_id}
         
         response = supabase.table("tasks")\
@@ -510,19 +467,18 @@ async def move_task_to_board(
                 detail="No se pudo mover la tarea"
             )
         
-        # 5. Enriquecer datos de la tarea actualizada
+        # Enriquecer datos
         updated_task = await enrich_task_data(response.data[0], supabase)
         
-        # Log para debugging (opcional)
         old_board_text = f"tablero {old_board_id}" if old_board_id else "sin tablero"
-        print(f"Tarea '{current_task['title']}' movida de {old_board_text} a {new_board_name}")
+        #print(f"Tarea '{current_task['title']}' movida de {old_board_text} a {new_board_name}")
         
         return updated_task
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error al mover tarea: {str(e)}")
+        #print(f"Error al mover tarea: {str(e)}")
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al mover tarea: {str(e)}"

@@ -1,6 +1,5 @@
-
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Literal
 from datetime import datetime, date
 
 
@@ -14,17 +13,28 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     board_id: Optional[int] = None
     priority: str = Field(default="Media")
-    status: str = Field(default="todo")
+    status: Literal["todo", "progress", "done"] = Field(default="todo")
     status_badge: Optional[str] = None
     status_badge_color: Optional[str] = Field(default="#9254DE")
     assignee_id: Optional[str] = None
     due_date: Optional[str] = None
-    due_time: Optional[str] = Field(default="09:00", description="Hora de vencimiento HH:MM")
+    due_time: Optional[str] = Field(default="09:00")
     
     # Configuración de recordatorio automático
-    create_reminder: bool = Field(default=True, description="Crear recordatorio automático")
-    reminder_days_before: int = Field(default=1, description="Días antes para recordatorio")
-    reminder_time: str = Field(default="09:00", description="Hora del recordatorio")
+    create_reminder: bool = Field(default=True)
+    reminder_days_before: int = Field(default=1)
+    reminder_time: str = Field(default="09:00")
+    
+    @field_validator('due_time', 'reminder_time')
+    @classmethod
+    def normalize_time(cls, v: Optional[str]) -> Optional[str]:
+        """Normaliza el formato de tiempo a HH:MM"""
+        if v is None:
+            return v
+        # Si viene como HH:MM:SS, convertir a HH:MM
+        if len(v) == 8 and v.count(':') == 2:
+            return v[:5]
+        return v
     
     class Config:
         json_schema_extra = {
@@ -34,6 +44,7 @@ class TaskCreate(BaseModel):
                 "board_id": 1,
                 "priority": "Alta",
                 "status": "todo",
+                "status_badge": "Testing",
                 "due_date": "2024-10-12",
                 "due_time": "14:00",
                 "create_reminder": True, 
@@ -42,25 +53,38 @@ class TaskCreate(BaseModel):
             }
         }
 
+
 class TaskUpdate(BaseModel):
     """Schema para actualizar una tarea"""
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = None
     board_id: Optional[int] = None
     priority: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[Literal["todo", "progress", "done"]] = None
     status_badge: Optional[str] = None
     status_badge_color: Optional[str] = None
     assignee_id: Optional[str] = None
     due_date: Optional[str] = None
-    due_time: Optional[str] = None  
+    due_time: Optional[str] = None
     completed: Optional[bool] = None
+    
+    @field_validator('due_time')
+    @classmethod
+    def normalize_time(cls, v: Optional[str]) -> Optional[str]:
+        """Normaliza el formato de tiempo a HH:MM"""
+        if v is None:
+            return v
+        # Si viene como HH:MM:SS, convertir a HH:MM
+        if len(v) == 8 and v.count(':') == 2:
+            return v[:5]
+        return v
     
     class Config:
         json_schema_extra = {
             "example": {
                 "title": "Rediseñar Landing Page - Actualizado",
                 "status": "progress",
+                "status_badge": "Testing",
                 "priority": "Media",
                 "due_time": "15:00"  
             }
@@ -69,7 +93,7 @@ class TaskUpdate(BaseModel):
 
 class TaskStatusUpdate(BaseModel):
     """Schema para cambiar solo el status (para drag & drop)"""
-    status: str = Field(..., description="Nuevo estado: todo, progress, done")
+    status: Literal["todo", "progress", "done"] = Field(..., description="Nuevo estado: todo, progress, done")
     
     class Config:
         json_schema_extra = {
@@ -169,11 +193,11 @@ class TaskListResponse(BaseModel):
 
 
 class TaskMoveRequest(BaseModel):
-    board_id: Optional[int] = None  # None = mover a "sin tablero"
+    board_id: Optional[int] = None
     
     class Config:
         json_schema_extra = {
             "example": {
-                "board_id": 5  # O null para mover a "sin tablero"
+                "board_id": 5
             }
-         }
+        }
